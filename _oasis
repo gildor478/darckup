@@ -1,19 +1,27 @@
-OASISFormat: 0.4
-Name:        darckup
-Version:     0.0.1
-Synopsis:    Manage dar backups.
-Authors:     Sylvain Le Gall
-Copyrights:  (C) 2015 Sylvain Le Gall
-License:     GPL-3
-Plugins:     DevFiles (0.4), META (0.4), StdFiles (0.4)
-BuildTools:  ocamlbuild
-FilesAB:     src/darckup/conf.ml.ab
+OASISFormat:  0.4
+OCamlVersion: >= 3.12.0
+Name:         darckup
+Version:      0.0.1
+Synopsis:     Manage dar backups.
+Authors:      Sylvain Le Gall
+Copyrights:   (C) 2015 Sylvain Le Gall
+License:      GPL-3
+Plugins:      DevFiles (0.4), META (0.4), StdFiles (0.4)
+BuildTools:   ocamlbuild
+FilesAB:      src/darckup/conf.ml.ab
 Description:
+  Software and library to manipulate a set of dar backups:
+  .
+   - remove old backups
+   - create new backups
+   - upload to remote server
+   - mulitple backups creation
 
 Library darckup
   Path:       src/lib
   BuildTools: ocamlbuild
   Modules:    Darckup
+  BuildDepends: re (>= 1.1.0)
 
 Executable darckup
   Path:         src/darckup
@@ -24,7 +32,7 @@ Executable test
   Path:         test
   Build$:       flag(tests)
   MainIs:       test.ml
-  BuildDepends: darckup, oUnit (>= 2.0)
+  BuildDepends: darckup, oUnit (>= 2.0), fileutils
 
 Test main
   Command:   $test
