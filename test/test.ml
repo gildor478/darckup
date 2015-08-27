@@ -18,7 +18,7 @@ OUnitDiff.ListSimpleMake
 
 let tests = 
   [
-    "ArchiveSet.of_filenames" >::
+    "Simple" >::
     (fun test_ctxt ->
        let files =
            [
@@ -34,6 +34,11 @@ let tests =
        let set, bad = ArchiveSet.of_filenames (List.rev files) in
          StringListDiff.assert_equal [] bad;
          StringListDiff.assert_equal files (ArchiveSet.to_filenames set);
+         assert_equal
+           ~msg:"ArchiveSet.length"
+           ~printer:string_of_int
+           6
+           (ArchiveSet.length set);
          ()
     );
   ]

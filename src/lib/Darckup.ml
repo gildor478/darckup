@@ -102,8 +102,7 @@ struct
          (fun _ a l -> List.rev_append (Archive.to_filenames a) l)
          t [])
 
-  let length t =
-    failwith "Not implemented"
+  let length = M.cardinal
 
   let last t =
     failwith "Not implemented"
