@@ -31,14 +31,23 @@ let tests =
              "foobar_20150905_full.1.dar";
            ]
        in
-       let set, bad = ArchiveSet.of_filenames (List.rev files) in
+       let set, bad =
+         (* of_filenames *)
+         ArchiveSet.of_filenames (List.rev files) in
          StringListDiff.assert_equal [] bad;
          StringListDiff.assert_equal files (ArchiveSet.to_filenames set);
+
+         (* length *)
          assert_equal
            ~msg:"ArchiveSet.length"
            ~printer:string_of_int
            6
            (ArchiveSet.length set);
+
+         (* last *)
+         StringListDiff.assert_equal
+           ["foobar_20150905_full.1.dar"]
+           (Archive.to_filenames (ArchiveSet.last set));
          ()
     );
   ]

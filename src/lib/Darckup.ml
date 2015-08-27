@@ -104,8 +104,7 @@ struct
 
   let length = M.cardinal
 
-  let last t =
-    failwith "Not implemented"
+  let last t = snd (M.max_binding t)
 
   let next t max_incremental prefix volumes =
     failwith "Not implemented"
