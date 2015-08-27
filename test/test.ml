@@ -48,6 +48,27 @@ let tests =
          StringListDiff.assert_equal
            ["foobar_20150905_full.1.dar"]
            (Archive.to_filenames (ArchiveSet.last set));
+
+         (* pop *)
+         StringListDiff.assert_equal
+           ["foobar_20150831_incr_1.1.dar"]
+           (Archive.to_filenames (snd (ArchiveSet.pop set)));
+
+         (* npop *)
+         StringListDiff.assert_equal
+           [
+             "foobar_20150831_incr_1.1.dar";
+             "foobar_20150831_incr_2.1.dar";
+             "foobar_20150831_incr_3.1.dar";
+             "foobar_20150831_incr_4.1.dar";
+             "foobar_20150831_incr_4.2.dar";
+             "foobar_20150831_full.1.dar";
+             "foobar_20150905_full.1.dar";
+           ]
+           (List.flatten
+              (List.map Archive.to_filenames
+                 (snd (ArchiveSet.npop (ArchiveSet.length set) set))));
+
          ()
     );
   ]

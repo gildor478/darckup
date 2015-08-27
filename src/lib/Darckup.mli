@@ -39,7 +39,7 @@ sig
 
   val pop: t -> t * Archive.t
 
-  val push: t -> Archive.t -> t
+  val npop: int -> t -> t * Archive.t list
 
   (** [list] returns the list of archive given a directory name. *)
   val list: filename -> t * filename list

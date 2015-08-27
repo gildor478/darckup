@@ -109,11 +109,26 @@ struct
   let next t max_incremental prefix volumes =
     failwith "Not implemented"
 
-  let pop t =
-    failwith "Not implemented"
+  let rec pop t =
+    let (pre, knd) as key, a = M.min_binding t in
+    let t = M.remove key t in
+      if not (M.is_empty t) && knd = Archive.Full then begin
+        match  fst (M.min_binding t) with
+          | pre', Archive.Incremental _ when pre = pre' ->
+              let t, a' = pop t in add a t, a'
+          | _, _ ->
+              t, a
+      end else begin
+        t, a
+      end
 
-  let push t e =
-    failwith "Not implemented"
+  let rec npop n t =
+    if n <= 0 then
+      t, []
+    else
+      let t, a = pop t in
+      let t, l = npop (n - 1) t in
+        t, a :: l
 
   let list dn =
     of_filenames
