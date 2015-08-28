@@ -106,8 +106,19 @@ struct
 
   let last t = snd (M.max_binding t)
 
-  let next t max_incremental prefix volumes =
-    failwith "Not implemented"
+  let next t max_incremental prefix_full =
+    if max_incremental <= 0 then begin
+      prefix_full ^ "full"
+    end else begin
+      let open Archive in
+      match last t with
+        | { kind = Full } as a -> a.prefix ^ "incr01"
+        | { kind = Incremental n } as a ->
+            if n + 1 <= max_incremental then
+              Printf.sprintf "%sincr%02d" a.prefix (n + 1)
+            else
+              prefix_full ^ "full"
+    end
 
   let rec pop t =
     let (pre, knd) as key, a = M.min_binding t in
@@ -129,8 +140,4 @@ struct
       let t, a = pop t in
       let t, l = npop (n - 1) t in
         t, a :: l
-
-  let list dn =
-    of_filenames
-      (List.map (Filename.concat dn) (Array.to_list (Sys.readdir dn)))
 end

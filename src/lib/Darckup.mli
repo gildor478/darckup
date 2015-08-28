@@ -35,12 +35,12 @@ sig
 
   val last: t -> Archive.t
 
-  val next: t -> int -> filename -> int -> Archive.t
+  (* [next t max_incremental prefix_full] returns either the latest prefix with
+     an incremented suffix or [prefix_full ^ "full"].
+   *)
+  val next: t -> int -> filename -> filename
 
   val pop: t -> t * Archive.t
 
   val npop: int -> t -> t * Archive.t list
-
-  (** [list] returns the list of archive given a directory name. *)
-  val list: filename -> t * filename list
 end

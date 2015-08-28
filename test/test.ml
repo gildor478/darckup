@@ -29,6 +29,7 @@ let tests =
              "foobar_20150831_incr_4.1.dar";
              "foobar_20150831_incr_4.2.dar";
              "foobar_20150905_full.1.dar";
+             "foobar_20150905_incr1.1.dar";
            ]
        in
        let set, bad =
@@ -41,12 +42,12 @@ let tests =
          assert_equal
            ~msg:"ArchiveSet.length"
            ~printer:string_of_int
-           6
+           7
            (ArchiveSet.length set);
 
          (* last *)
          StringListDiff.assert_equal
-           ["foobar_20150905_full.1.dar"]
+           ["foobar_20150905_incr1.1.dar"]
            (Archive.to_filenames (ArchiveSet.last set));
 
          (* pop *)
@@ -63,11 +64,24 @@ let tests =
              "foobar_20150831_incr_4.1.dar";
              "foobar_20150831_incr_4.2.dar";
              "foobar_20150831_full.1.dar";
+             "foobar_20150905_incr1.1.dar";
              "foobar_20150905_full.1.dar";
            ]
            (List.flatten
               (List.map Archive.to_filenames
                  (snd (ArchiveSet.npop (ArchiveSet.length set) set))));
+
+         (* next *)
+         assert_equal
+           ~msg:"ArchiveSet.next"
+           ~printer:(fun s -> s)
+           "foobar_20150907_full"
+           (ArchiveSet.next set 1 "foobar_20150907_");
+         assert_equal
+           ~msg:"ArchiveSet.next"
+           ~printer:(fun s -> s)
+           "foobar_20150905_incr02"
+           (ArchiveSet.next set 2 "foobar_20150907_");
 
          ()
     );
