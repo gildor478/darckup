@@ -5,7 +5,6 @@
 (** Type describing a filename. *)
 type filename = string
 
-
 (** Archive module provides types and functions to manipulate full and
   * incremental backup archive filename. It only acts on naming convention
     and doesn't actually read the content of the file,
@@ -59,3 +58,37 @@ sig
     *)
   val npop: int -> t -> t * Archive.t list
 end
+
+type archive_set = {
+  backup_dir: filename;
+  darrc: filename;
+  prefix: string;
+  max_incrementals: int;
+  max_archives: int;
+}
+
+type t = {
+  dar: filename;
+  now_rfc3339: string;
+  pre_command: string option;
+  post_command: string option;
+  ignore_files: string list;
+  archive_sets: (string * archive_set) list;
+
+  (* System interface. *)
+  command: string -> int;
+  readdir: filename -> filename array;
+  remove: filename -> unit;
+  getcwd: unit -> filename;
+  file_exists: filename -> bool;
+  is_directory: filename -> bool;
+  log: [`Info | `Warning | `Error] -> string -> unit;
+}
+
+val default: t
+
+val load: t -> filename -> t
+
+val create: t -> unit
+
+val clean: t -> unit
