@@ -14,20 +14,27 @@ struct
   type kind = Full | Incremental of int
   type t =
       {
-        prefix: string;
+        short_prefix: string;
         volumes: volumes;
         kind: kind;
       }
 
   let is_full t = t.kind = Full
 
+  let to_full_prefix t = t.short_prefix ^ "_full"
+
+  let to_prefix t =
+    match t.kind with
+    | Full -> t.short_prefix ^ "_full"
+    | Incremental n -> Printf.sprintf "%s_incr%02d" t.short_prefix n
+
   let to_filenames t = List.map snd (IntMap.bindings t.volumes)
 
   let re =
     let open Re in
       compile (seq [group (rep any); (* 1 *)
-                    alt [str "full";
-                         seq [str "incr";
+                    alt [str "_full";
+                         seq [str "_incr";
                               opt (char '_');
                               group (rep1 digit)]]; (* 2 *)
                     char '.';
@@ -38,7 +45,7 @@ struct
   let parse s =
     try
       let substr = Re.exec re s in
-      let prefix = Re.get substr 1 in
+      let short_prefix = Re.get substr 1 in
       let volume = int_of_string (Re.get substr 3) in
       let kind =
         try
@@ -47,12 +54,29 @@ struct
           Full
       in
         {
-          prefix = prefix;
+          short_prefix;
           volumes = IntMap.add volume s IntMap.empty;
           kind = kind;
         }
     with Not_found ->
       invalid_arg s
+
+  let merge t1 t2 =
+    let open IntMap in
+    if to_prefix t1 = to_prefix t2 then
+      {t1 with
+           volumes =
+             merge
+               (fun _ e1 e2 ->
+                  match e1, e2 with
+                  | Some fn1, Some fn2 ->
+                      if fn1 <> fn2 then
+                        invalid_arg fn2;
+                      e1
+                  | None, e | e, None -> e)
+               t1.volumes t2.volumes}
+    else
+      invalid_arg (to_prefix t2)
 end
 
 module ArchiveSet =
@@ -60,32 +84,16 @@ struct
   module M =
     Map.Make
       (struct
-         type t = string * Archive.kind
-         let compare = Pervasives.compare
+         type t = string
+         let compare = String.compare
        end)
 
   type t = Archive.t M.t
 
   let add a t =
-    let k = a.Archive.prefix, a.Archive.kind in
-    let a' =
-      try
-        let a' = M.find k t in
-          {a' with
-            Archive.volumes =
-              IntMap.merge
-                (fun _ e1 e2 ->
-                   match e1, e2 with
-                     | Some fn1, Some fn2 ->
-                         if fn1 <> fn2 then
-                           invalid_arg fn2;
-                         e1
-                     | None, e | e, None -> e)
-                a'.Archive.volumes a.Archive.volumes}
-      with Not_found ->
-        a
-    in
-      M.add k a' t
+    let open Archive in
+    let k = to_prefix a in
+      M.add k (try merge (M.find k t) a with Not_found -> a) t
 
   let of_filenames =
     List.fold_left
@@ -106,28 +114,41 @@ struct
 
   let last t = snd (M.max_binding t)
 
-  let next t max_incremental prefix_full =
-    if max_incremental <= 0 then begin
-      prefix_full ^ "full"
+  let next t max_incremental short_prefix =
+    let open Archive in
+    let make a =
+      {a with volumes = IntMap.add 1 ((to_prefix a)^".1.dar") IntMap.empty}
+    in
+    let full =
+      make
+        {
+          short_prefix;
+          kind = Full;
+          volumes = IntMap.empty;
+        }
+    in
+    if max_incremental <= 0 || length t = 0 then begin
+      full
     end else begin
-      let open Archive in
       match last t with
-        | { kind = Full } as a -> a.prefix ^ "incr01"
+        | { kind = Full } as a ->
+            make {a with kind = Incremental 1}
         | { kind = Incremental n } as a ->
             if n + 1 <= max_incremental then
-              Printf.sprintf "%sincr%02d" a.prefix (n + 1)
+              make {a with kind = Incremental (n + 1)}
             else
-              prefix_full ^ "full"
+              full
     end
 
   let rec pop t =
-    let (pre, knd) as key, a = M.min_binding t in
-    let t = M.remove key t in
-      if not (M.is_empty t) && knd = Archive.Full then begin
-        match  fst (M.min_binding t) with
-          | pre', Archive.Incremental _ when pre = pre' ->
+    let prefix, a = M.min_binding t in
+    let t = M.remove prefix t in
+      if not (M.is_empty t) && Archive.is_full a then begin
+        match  snd (M.min_binding t) with
+          | {Archive.kind = Archive.Incremental _} as a'
+              when Archive.to_full_prefix a = Archive.to_full_prefix a' ->
               let t, a' = pop t in add a t, a'
-          | _, _ ->
+          | _ ->
               t, a
       end else begin
         t, a
@@ -145,21 +166,28 @@ end
 type archive_set = {
   backup_dir: filename;
   darrc: filename;
-  prefix: string;
+  base_prefix: string;
   max_incrementals: int;
   max_archives: int;
 }
 
+type outf = string -> unit
+type errf = string -> unit
+type env = string array
+
 type t = {
   dar: filename;
   now_rfc3339: string;
-  pre_command: string option;
-  post_command: string option;
-  ignore_files: string list;
+  pre_create_command: string option;
+  post_create_command: string option;
+  pre_clean_command: string option;
+  post_clean_command: string option;
+  ignore_glob_files: string list;
   archive_sets: (string * archive_set) list;
 
   (* System interface. *)
-  command: string -> int;
+  command: Command.command_t;
+  environment: unit -> env;
   readdir: filename -> filename array;
   remove: filename -> unit;
   getcwd: unit -> filename;
@@ -169,22 +197,33 @@ type t = {
 }
 
 
-let default = {
+let default =
+  {
     dar = "dar";
-    now_rfc3339 = "TODO"; (* TODO *)
-    pre_command = None;
-    post_command = None;
-    ignore_files = [];
+    now_rfc3339 =
+      begin
+        let open CalendarLib in
+          Printer.Calendar.sprint "%FT%T%:z" (Calendar.now ())
+      end;
+    pre_create_command = None;
+    post_create_command = None;
+    pre_clean_command = None;
+    post_clean_command = None;
+    ignore_glob_files = [];
     archive_sets = [];
 
-    command = Sys.command;
+    command = Command.command;
+    environment = Unix.environment;
     readdir = Sys.readdir;
     remove = Sys.remove;
     getcwd = Sys.getcwd;
     file_exists = Sys.file_exists;
     is_directory = Sys.is_directory;
     log = (fun _ _ -> ());
-}
+  }
+
+
+let logf t lvl fmt = Printf.ksprintf (t.log lvl) fmt
 
 
 let load t fn =
@@ -282,24 +321,36 @@ let load t fn =
            {
              t with
                  dar = get ~default:t.dar identity sect "dar";
-                 pre_command =
+                 pre_create_command =
                    get
-                     ~default:t.pre_command
+                     ~default:t.pre_create_command
                      (opt identity)
                      sect
-                     "pre_command";
-                 post_command =
+                     "pre_create_command";
+                 post_create_command =
                    get
-                     ~default:t.post_command
+                     ~default:t.post_create_command
                      (opt identity)
                      sect
-                     "post_command";
-                 ignore_files =
+                     "post_create_command";
+                 pre_clean_command =
                    get
-                     ~default:t.ignore_files
+                     ~default:t.pre_clean_command
+                     (opt identity)
+                     sect
+                     "pre_clean_command";
+                 post_clean_command =
+                   get
+                     ~default:t.post_clean_command
+                     (opt identity)
+                     sect
+                     "post_clean_command";
+                 ignore_glob_files =
+                   get
+                     ~default:t.ignore_glob_files
                      (comma_list identity)
                      sect
-                     "ignore_files";
+                     "ignore_glob_files";
            }
          end else begin
            try
@@ -309,7 +360,7 @@ let load t fn =
                {
                  backup_dir = get directory_exists sect "backup_dir";
                  darrc = get file_exists sect "darrc";
-                 prefix = get identity sect "prefix";
+                 base_prefix = get identity sect "base_prefix";
                  max_incrementals = get ~default:6 (integer_with_min 0) sect
                                       "max_incrementals";
                  max_archives = get ~default:30 (integer_with_min 0) sect
@@ -327,9 +378,156 @@ let load t fn =
     {t with archive_sets = List.rev t.archive_sets}
 
 
-let create t =
-  failwith "Not implemented"
+let load_archive_sets t =
+  let module MapString =
+    Map.Make
+      (struct
+         type t = filename
+         let compare = String.compare
+       end)
+  in
 
+  (* Cons the value v to the list, using [v] if not yet set. *)
+  let cons s v mp =
+    let l = try MapString.find s mp with Not_found -> [] in
+      MapString.add s (v :: l) mp
+  in
+
+  (* Group archive per backup_dir. *)
+  let group_backup_dir =
+    List.fold_left
+      (fun mp ((_, {backup_dir = dn}) as e) -> cons dn e mp)
+      MapString.empty t.archive_sets
+  in
+
+  let process_backup_dir backup_dir archive_sets map_names =
+    (* We create on Re.group per archive_set and we use to know what
+     * archive_set matches the given filename.
+     *)
+    let files_lists = Array.make (List.length archive_sets) [] in
+    let classifier_re =
+       let open Re in
+       let groups =
+         List.map
+           (fun (_, aset) -> group (seq [str aset.base_prefix; rep any]))
+           archive_sets
+       in
+         compile (seq [alt groups; rep any; str ".dar"; eol])
+    in
+    let test_assign bn =
+      (* Test if the basename match and cons the filename if yes. *)
+      try
+        let substr = Re.exec classifier_re bn in
+        let found = ref false in
+        let i = ref 0 in
+          while not !found && !i < Array.length files_lists do
+            if Re.test substr (!i + 1) then begin
+              files_lists.(!i) <-
+                Filename.concat backup_dir bn :: files_lists.(!i);
+              found := true
+            end;
+            incr i
+          done
+      with Not_found ->
+          logf t `Warning "File %S doesn't match any archive."
+          (Filename.concat backup_dir bn)
+    in
+    let _, map_names =
+      (* Group filenames from the backup directory per known prefix. *)
+      Array.iter test_assign (t.readdir backup_dir);
+      List.fold_left
+        (fun (i, map_names) (aname, aset) ->
+           let archv, lst =
+             List.iter
+               (fun fn ->
+                 logf t `Info "Adding file %S to archive %S." fn aname)
+               files_lists.(i);
+             ArchiveSet.of_filenames files_lists.(i)
+           in
+             List.iter
+               (fun fn ->
+                 logf t `Warning "File %S doesn't match archive %S." fn aname)
+               lst;
+              i + 1, MapString.add aname archv map_names)
+        (0, map_names) archive_sets
+    in
+      map_names
+  in
+
+  let map_names =
+    MapString.fold process_backup_dir group_backup_dir MapString.empty
+  in
+    List.map
+      (fun (aname, aset) -> aname, aset, MapString.find aname map_names)
+      t.archive_sets
+
+
+let create t =
+  let run_capture cmd =
+    t.command
+      ~env:(t.environment ())
+      ~outf:(logf t `Info "%s")
+      ~errf:(logf t `Warning "%s")
+      cmd
+  in
+  let run_opt field_name cmd_opt =
+    match cmd_opt with
+    | Some cmd ->
+        begin
+          logf t `Info "Running command %S from field %s." cmd field_name;
+          match run_capture cmd with
+          | 0 -> ()
+          | n ->
+              failwith
+                (Printf.sprintf
+                   "Command %S from field %s has failed with exit code %d."
+                   cmd field_name n);
+        end
+    | None ->
+        logf t `Info "No command defined from field %s." field_name
+  in
+  let lst =
+    List.map
+      (fun (aname, aset, archv) ->
+         let a =
+           ArchiveSet.next archv aset.max_incrementals
+             (Filename.concat
+                aset.backup_dir (aset.base_prefix ^ "_" ^ t.now_rfc3339))
+         in
+           (aname, a),
+           String.concat " "
+             (List.flatten
+                [
+                  [t.dar;
+                   "-c"; Filename.quote (Archive.to_prefix a);
+                   "-noconf";
+                   "-B"; Filename.quote aset.darrc];
+                  if not (Archive.is_full a) then
+                    ["-A"; Archive.to_full_prefix a]
+                  else
+                    [];
+                ]))
+      (load_archive_sets t)
+  in
+
+  (* Invoke pre_command. *)
+  run_opt "pre_create_command" t.pre_create_command;
+
+  (* Invoke dar for each archive_set. *)
+  List.iter
+    (fun (_, cmd) ->
+       logf t `Info "Running command %S to create a dar archive." cmd;
+       match run_capture cmd with
+       | 0 -> ()
+       | n ->
+           failwith
+             (Printf.sprintf "Command %S has failed with exit code %d." cmd n))
+    lst;
+
+  (* Invoke post_command. *)
+  run_opt "post_create_command" t.post_create_command;
+
+  List.map fst lst
 
 let clean t =
   failwith "Not implemented"

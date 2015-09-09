@@ -1,6 +1,6 @@
 
 
-(** Darckup module provides function to manage a dar backup system. *)
+(** Darckup module provides functions to manage a dar backup system. *)
 
 (** Type describing a filename. *)
 type filename = string
@@ -13,9 +13,30 @@ module Archive:
 sig
   type t
 
+  (** Test if this is a full archive.
+    *)
   val is_full: t -> bool
 
+  (** Return a prefix suitable to use with -A option of dar, for incremental
+      archive.
+    *)
+  val to_full_prefix: t -> filename
+
+  (** Return a prefix suitable to use with -c option of dar.
+    *)
+  val to_prefix: t -> filename
+
+  (** Return the list of filenames for this archive.
+    *)
   val to_filenames: t -> filename list
+
+  (** Parse a string to build an archive.
+    *)
+  val parse: string -> t
+
+  (** Merge two archive, if their prefix match.
+    *)
+  val merge: t -> t -> t
 end
 
 (** ArchiveSet module provides types and functions to manipulate a set of full
@@ -43,10 +64,10 @@ sig
     *)
   val last: t -> Archive.t
 
-  (** [next t max_incremental prefix_full] returns either the latest prefix
-      with an incremented suffix or [prefix_full ^ "full"].
+  (** [next t max_incremental short_prefix] returns the archive that should be
+      created after the last one.
     *)
-  val next: t -> int -> filename -> filename
+  val next: t -> int -> filename -> Archive.t
 
   (** [pop t] returns the archive set without the first element, which is
       returned as well.
@@ -60,23 +81,53 @@ sig
 end
 
 type archive_set = {
+  (** Directory wher the archives are stored. *)
   backup_dir: filename;
+
+  (** Configuration file for dar, for these archives. *)
   darrc: filename;
-  prefix: string;
+
+  (** A prefix with which the archive name will start. *)
+  base_prefix: string;
+
+  (** Maximal number of incremental archives (create). *)
   max_incrementals: int;
+
+  (** Maximal number of archives (clean). *)
   max_archives: int;
 }
 
+(** Configuration for Darckup high level commands. *)
 type t = {
+  (** The dar binary. *)
   dar: filename;
+
+  (** A time string that will be used to compose name of new full archive. *)
   now_rfc3339: string;
-  pre_command: string option;
-  post_command: string option;
-  ignore_files: string list;
+
+  (** Command to run before create. *)
+  pre_create_command: string option;
+
+  (** Command to run after create. *)
+  post_create_command: string option;
+
+  (** Command to run before clean. *)
+  pre_clean_command: string option;
+
+  (** Command to run after clean. *)
+  post_clean_command: string option;
+
+  (** File to ignore when scanning backup directories when scanning
+      for archives.
+    *)
+  ignore_glob_files: string list;
+
+  (** All the available archives and the name of each. *)
   archive_sets: (string * archive_set) list;
 
   (* System interface. *)
-  command: string -> int;
+  command: Command.command_t;
+  environment: unit -> string array;
   readdir: filename -> filename array;
   remove: filename -> unit;
   getcwd: unit -> filename;
@@ -85,10 +136,16 @@ type t = {
   log: [`Info | `Warning | `Error] -> string -> unit;
 }
 
+(** Default configuration. *)
 val default: t
 
+(** [load t ini] MErge configuration found in [ini] into the configuration [t].
+  *)
 val load: t -> filename -> t
 
-val create: t -> unit
+(** Create archives and return the created archives.
+  *)
+val create: t -> (string * Archive.t) list
 
+(** Clean up archives, to match max archives constraint. *)
 val clean: t -> unit

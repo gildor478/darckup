@@ -17,6 +17,15 @@ OUnitDiff.ListSimpleMake
    end)
 
 
+module StringSetDiff =
+OUnitDiff.SetMake
+  (struct
+     type t = string
+     let pp_printer fmt = Format.fprintf fmt "%S"
+     let compare = String.compare
+     let pp_print_sep = OUnitDiff.pp_comma_separator
+   end)
+
 let write_file test_ctxt binding fn cnt =
   let open FilePath in
   let open FileUtil in
@@ -57,6 +66,20 @@ let write_file test_ctxt binding fn cnt =
     close_out fd;
     logf test_ctxt
       `Info "Creating file %s with content:\n%s" fn (Buffer.contents b)
+
+
+let assert_equal_dir_list lst dn =
+        StringSetDiff.assert_equal
+          (StringSetDiff.of_list lst)
+          (StringSetDiff.of_list (Array.to_list (Sys.readdir dn)))
+
+
+let assert_bigger_size fn1 fn2 =
+  let open FileUtil in
+    assert_equal
+      ~printer:string_of_size
+      ~cmp:(fun sz1 sz2 -> size_compare sz1 sz2 > 0)
+      (stat fn1).size (stat fn2).size
 
 let tests = 
   [
@@ -118,19 +141,25 @@ let tests =
            ~msg:"ArchiveSet.next"
            ~printer:(fun s -> s)
            "foobar_20150907_full"
-           (ArchiveSet.next set 1 "foobar_20150907_");
+           (Archive.to_prefix (ArchiveSet.next set 1 "foobar_20150907"));
          assert_equal
            ~msg:"ArchiveSet.next"
            ~printer:(fun s -> s)
            "foobar_20150905_incr02"
-           (ArchiveSet.next set 2 "foobar_20150907_");
+           (Archive.to_prefix (ArchiveSet.next set 2 "foobar_20150907"));
 
          ()
     );
 
     "load+clean+create" >::
     (fun test_ctxt ->
-       let t = {default with now_rfc3339 = "2015-08-29T00:25:00+01:00"} in
+       let t =
+         {
+           default with
+               now_rfc3339 = "today";
+               log = (fun lvl s -> logf test_ctxt lvl "%s" s);
+         }
+       in
        let tmpdir = bracket_tmpdir test_ctxt in
        let in_tmpdir lst = FilePath.make_filename (tmpdir :: lst) in
        let write_file lst cnt =
@@ -142,30 +171,29 @@ let tests =
          (* Populate the filesystem. *)
          mkdir ~parent:true (in_tmpdir ["var"; "foobar"]);
          touch (in_tmpdir ["var"; "foobar"; "01.txt"]);
-         touch (in_tmpdir ["var"; "foobar"; "02.txt"]);
+         write_file ["var"; "foobar"; "02.txt"] (String.make 1512 'x');
          mkdir ~parent:true (in_tmpdir ["var"; "barbaz"]);
          touch (in_tmpdir ["var"; "barbaz"; "01.txt"]);
          touch (in_tmpdir ["var"; "barbaz"; "02.txt"]);
-         mkdir ~parent:true (in_tmpdir ["srv"; "backup"; "foobar"]);
-         mkdir ~parent:true (in_tmpdir ["srv"; "backup"; "barbaz"]);
+         mkdir ~parent:true (in_tmpdir ["srv"; "backup"]);
          (* Create etc/darckup.ini. *)
          write_file ["etc"; "darckup.ini"]
            "[default]
-            pre_command=true
-            post_command=true
-            ignore_files=*.md5sums,*.meta
+            pre_create_command=true
+            post_create_command=true
+            ignore_glob_files=*.md5sums,*.meta
 
             [archive:foobar]
-            backup_dir=${tmpdir}/srv/backup/foobar
+            backup_dir=${tmpdir}/srv/backup
             darrc=${tmpdir}/etc/foobar.darrc
-            prefix=foobar_
+            base_prefix=foobar
             max_incrementals=2
             max_archives=3
 
             [archive:barbaz]
-            backup_dir=${tmpdir}/srv/backup/barbaz
+            backup_dir=${tmpdir}/srv/backup
             darrc=${tmpdir}/etc/barbaz.darrc
-            prefix=foobar_
+            base_prefix=barbaz
             max_incrementals=1
             max_archives=3
            ";
@@ -175,7 +203,6 @@ let tests =
             -w
             -D
             -g var/foobar
-            -z
             -R ${tmpdir}
             all:
             -Z *.Z
@@ -193,7 +220,6 @@ let tests =
             -w
             -D
             -g var/barbaz
-            -z
             -R ${tmpdir}
             all:
             -Z *.Z
@@ -207,22 +233,45 @@ let tests =
            "
        in
        let t = load t (in_tmpdir ["etc"; "darckup.ini"]) in
+       let () =
          (* Check result of loading INI file. *)
          assert_equal ~printer:(function Some s -> s | None -> "none")
-           (Some "true") t.pre_command;
+           (Some "true") t.pre_create_command;
          assert_equal ~printer:(function Some s -> s | None -> "none")
-           (Some "true") t.post_command;
+           (Some "true") t.post_create_command;
          StringListDiff.assert_equal
-           ["*.md5sums"; "*.meta"] t.ignore_files;
+           ["*.md5sums"; "*.meta"] t.ignore_glob_files;
          StringListDiff.assert_equal
            ["foobar"; "barbaz"] (List.map fst t.archive_sets);
          assert_equal ~printer:(fun s -> s)
-           "foobar_" (List.assoc "foobar" t.archive_sets).prefix;
+           "foobar" (List.assoc "foobar" t.archive_sets).base_prefix;
          assert_equal ~printer:string_of_int
            2 (List.assoc "foobar" t.archive_sets).max_incrementals;
          assert_equal ~printer:string_of_int
-           3 (List.assoc "foobar" t.archive_sets).max_archives;
-       ());
+           3 (List.assoc "foobar" t.archive_sets).max_archives
+      in
+      let _ = create t in
+      let () =
+        (* Check result of first run. *)
+        assert_equal_dir_list
+          ["foobar_today_full.1.dar"; "barbaz_today_full.1.dar"]
+          (in_tmpdir ["srv"; "backup"])
+      in
+      let t = {t with now_rfc3339 = "1dayafter"} in
+      let _lst = create t in
+      let () =
+        (* Check result of second run. *)
+        assert_command ~ctxt:test_ctxt
+          "ls" ["-l"; "-a"; in_tmpdir ["srv"; "backup"]];
+        assert_equal_dir_list
+          ["foobar_today_full.1.dar"; "foobar_today_incr01.1.dar";
+           "barbaz_today_full.1.dar"; "barbaz_today_incr01.1.dar"]
+          (in_tmpdir ["srv"; "backup"]);
+        assert_bigger_size
+          (in_tmpdir ["srv"; "backup"; "foobar_today_full.1.dar"])
+          (in_tmpdir ["srv"; "backup"; "foobar_today_incr01.1.dar"]);
+      in
+        ());
   ]
 
 let () =

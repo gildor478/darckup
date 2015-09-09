@@ -17,11 +17,21 @@ Description:
    - upload to remote server
    - mulitple backups creation
 
+Library command
+  Path:       src/lib/command
+  Modules:    Command
+  BuildDepends: unix
+
 Library darckup
   Path:       src/lib
-  BuildTools: ocamlbuild
   Modules:    Darckup
-  BuildDepends: re (>= 1.1.0), re.pcre, inifiles (>= 1.2), fileutils (>= 0.4.2)
+  BuildDepends:
+    re (>= 1.1.0), re.pcre,
+    inifiles (>= 1.2),
+    fileutils (>= 0.4.2),
+    unix,
+    command,
+    calendar (>= 2.03)
 
 Executable darckup
   Path:         src/darckup
@@ -32,7 +42,11 @@ Executable test
   Path:         test
   Build$:       flag(tests)
   MainIs:       test.ml
-  BuildDepends: darckup, oUnit (>= 2.0), fileutils (>= 0.4.2), re (>= 1.1.0)
+  BuildDepends:
+    darckup,
+    oUnit (>= 2.0),
+    fileutils (>= 0.4.2),
+    re (>= 1.1.0)
 
 Test main
   Command:   $test
