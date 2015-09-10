@@ -9,6 +9,7 @@ License:      GPL-3
 Plugins:      DevFiles (0.4), META (0.4), StdFiles (0.4)
 BuildTools:   ocamlbuild
 FilesAB:      src/darckup/conf.ml.ab
+Homepage:     https://forge.ocamlcore.org/projects/darckup/
 Description:
   Software and library to manipulate a set of dar backups:
   .
