@@ -24,7 +24,7 @@ Library command
   BuildDepends: unix
 
 Library darckup
-  Path:       src/lib
+  Path:       src/lib/darckup
   Modules:    Darckup
   BuildDepends:
     re (>= 1.1.0), re.pcre,
@@ -35,7 +35,7 @@ Library darckup
     calendar (>= 2.03)
 
 Executable darckup
-  Path:         src/darckup
+  Path:         src/bin/darckup
   MainIs:       main.ml
   BuildDepends: darckup
 
@@ -50,5 +50,5 @@ Executable test
     re (>= 1.1.0)
 
 Test main
-  Command:   $test
-  TestTools: test, dar
+  Command:   $test -darckup $darckup
+  TestTools: test, dar, darckup

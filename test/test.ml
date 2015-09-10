@@ -21,9 +21,10 @@ open OUnit2
 open FileUtil
 open Darckup
 
-module TestArchive =
-struct
-end
+
+let darckup_exec = Conf.make_exec "darckup"
+let dar_exec = Conf.make_exec "dar"
+
 
 module StringListDiff =
 OUnitDiff.ListSimpleMake

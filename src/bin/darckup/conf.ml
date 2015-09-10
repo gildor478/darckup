@@ -17,4 +17,5 @@
 (* along with this program.  If not, see <http://www.gnu.org/licenses/>. *)
 (*************************************************************************)
 
-let version = "$(pkg_version)"
+
+let version = "0.0.1"
