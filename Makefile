@@ -106,7 +106,8 @@ headache:
 #  Deploy/release the software.
 
 OASIS2DEBIAN_ARGS=--distribution wheezy \
-		--executable-name darckup
+		--executable-name darckup \
+		--executable-extra-depends dar 
 
 deploy:
 	admin-gallu-deploy --verbose \
