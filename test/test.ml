@@ -45,6 +45,7 @@ OUnitDiff.SetMake
      let pp_print_sep = OUnitDiff.pp_comma_separator
    end)
 
+
 let write_file test_ctxt binding fn cnt =
   let open FilePath in
   let open FileUtil in
@@ -100,7 +101,8 @@ let assert_bigger_size fn1 fn2 =
       ~cmp:(fun sz1 sz2 -> size_compare sz1 sz2 > 0)
       (stat fn1).size (stat fn2).size
 
-let tests = 
+
+let tests =
   [
     "ArchiveSet" >::
     (fun test_ctxt ->
@@ -292,6 +294,7 @@ let tests =
       in
         ());
   ]
+
 
 let () =
   run_test_tt_main

@@ -70,7 +70,8 @@ PRECOMMIT_ARGS= \
 	    --exclude INSTALL.txt \
 	    --exclude Makefile \
 	    --exclude configure \
-	    --exclude _tags
+	    --exclude _tags \
+			--exclude dist
 
 precommit:
 	-@if command -v OCamlPrecommit > /dev/null; then \

@@ -25,9 +25,10 @@ type arg = A of string | Fn of string
 type command_t = ?env:string array ->
   ?errf:(string -> unit) -> ?outf:(string -> unit) -> string -> int
 
-let command ?env ?(errf=prerr_endline) ?(outf=print_endline) cmd = 
-  let env = 
-    match env with 
+
+let command ?env ?(errf=prerr_endline) ?(outf=print_endline) cmd =
+  let env =
+    match env with
     | Some a -> a
     | None -> Unix.environment ()
   in
@@ -67,8 +68,8 @@ let command ?env ?(errf=prerr_endline) ?(outf=print_endline) cmd =
 
 
 let exec ?env ?errf ?outf bin args =
-  let l = 
-    List.map 
+  let l =
+    List.map
       (function
          | A s -> s
          | Fn fn -> Filename.quote fn)
