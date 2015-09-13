@@ -4,3 +4,4 @@
 /setup.data
 /_build/
 /dist/
+/src/bin/darckup/conf.ml
