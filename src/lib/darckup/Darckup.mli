@@ -113,15 +113,6 @@ type archive_set = {
 
   (** Maximal number of archives (clean). *)
   max_archives: int;
-}
-
-(** Configuration for Darckup high level commands. *)
-type t = {
-  (** The dar binary. *)
-  dar: filename;
-
-  (** A time string that will be used to compose name of new full archive. *)
-  now_rfc3339: string;
 
   (** Command to run before create. *)
   pre_create_command: string option;
@@ -134,6 +125,15 @@ type t = {
 
   (** Command to run after clean. *)
   post_clean_command: string option;
+}
+
+(** Configuration for Darckup high level commands. *)
+type t = {
+  (** The dar binary. *)
+  dar: filename;
+
+  (** A time string that will be used to compose name of new full archive. *)
+  now_rfc3339: string;
 
   (** File to ignore when scanning backup directories when scanning
       for archives.
@@ -144,8 +144,8 @@ type t = {
   archive_sets: (string * archive_set) list;
 
   (* System interface. *)
-  command: Command.command_t;
-  environment: unit -> string array;
+  command: unit Command.t -> string -> unit;
+  exec: unit Command.t -> filename -> Command.arg list -> unit;
   readdir: filename -> filename array;
   remove: filename -> unit;
   getcwd: unit -> filename;

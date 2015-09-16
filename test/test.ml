@@ -75,7 +75,8 @@ let write_file test_ctxt binding fn cnt =
            try
              List.assoc keyword binding
            with Not_found ->
-             Printf.sprintf "unknown substitution variable %S" keyword)
+             failwith
+               (Printf.sprintf "unknown substitution variable %S" keyword))
         cnt;
       b
   in
@@ -200,13 +201,13 @@ let tests =
          (* Create etc/darckup.ini. *)
          write_file ["etc"; "darckup.ini"]
            "[default]
-            pre_create_command=true
-            post_create_command=true
             ignore_glob_files=*.md5sums,*.meta
 
             [archive:foobar]
             backup_dir=${tmpdir}/srv/backup
             darrc=${tmpdir}/etc/foobar.darrc
+            post_create_command=touch \\${archive_prefix}.done
+            post_clean_command=rm \\${archive_prefix}.done
             base_prefix=foobar
             max_incrementals=2
             max_archives=3
@@ -256,43 +257,50 @@ let tests =
        let t = load t (in_tmpdir ["etc"; "darckup.ini"]) in
        let () =
          (* Check result of loading INI file. *)
-         assert_equal ~printer:(function Some s -> s | None -> "none")
-           (Some "true") t.pre_create_command;
-         assert_equal ~printer:(function Some s -> s | None -> "none")
-           (Some "true") t.post_create_command;
          StringListDiff.assert_equal
            ["*.md5sums"; "*.meta"] t.ignore_glob_files;
          StringListDiff.assert_equal
            ["foobar"; "barbaz"] (List.map fst t.archive_sets);
-         assert_equal ~printer:(fun s -> s)
-           "foobar" (List.assoc "foobar" t.archive_sets).base_prefix;
-         assert_equal ~printer:string_of_int
-           2 (List.assoc "foobar" t.archive_sets).max_incrementals;
+       in
+       let afoobar = List.assoc "foobar" t.archive_sets in
+       let () =
+         assert_equal ~printer:(function Some s -> s | None -> "none")
+           (Some "touch ${archive_prefix}.done") afoobar.post_create_command;
+         assert_equal ~printer:(function Some s -> s | None -> "none")
+           (Some "rm ${archive_prefix}.done") afoobar.post_clean_command;
+         assert_equal ~printer:(fun s -> s) "foobar" afoobar.base_prefix;
+         assert_equal ~printer:string_of_int 2 afoobar.max_incrementals;
          assert_equal ~printer:string_of_int
            3 (List.assoc "foobar" t.archive_sets).max_archives
-      in
-      let _ = create t in
-      let () =
-        (* Check result of first run. *)
-        assert_equal_dir_list
-          ["foobar_today_full.1.dar"; "barbaz_today_full.1.dar"]
-          (in_tmpdir ["srv"; "backup"])
-      in
-      let t = {t with now_rfc3339 = "1dayafter"} in
-      let _lst = create t in
-      let () =
-        (* Check result of second run. *)
-        assert_command ~ctxt:test_ctxt
-          "ls" ["-l"; "-a"; in_tmpdir ["srv"; "backup"]];
-        assert_equal_dir_list
-          ["foobar_today_full.1.dar"; "foobar_today_incr01.1.dar";
-           "barbaz_today_full.1.dar"; "barbaz_today_incr01.1.dar"]
-          (in_tmpdir ["srv"; "backup"]);
-        assert_bigger_size
-          (in_tmpdir ["srv"; "backup"; "foobar_today_full.1.dar"])
-          (in_tmpdir ["srv"; "backup"; "foobar_today_incr01.1.dar"]);
-      in
-        ());
+       in
+       let _ = create t in
+       let () =
+         (* Check result of first run. *)
+         assert_equal_dir_list
+           ["foobar_today_full.1.dar";
+            "foobar_today_full.done";
+            "barbaz_today_full.1.dar"]
+           (in_tmpdir ["srv"; "backup"])
+       in
+       let t = {t with now_rfc3339 = "1dayafter"} in
+       let _lst = create t in
+       let () =
+         (* Check result of second run. *)
+         assert_command ~ctxt:test_ctxt
+           "ls" ["-l"; "-a"; in_tmpdir ["srv"; "backup"]];
+         assert_equal_dir_list
+           ["foobar_today_full.1.dar";
+            "foobar_today_full.done";
+            "foobar_today_incr01.1.dar";
+            "foobar_today_incr01.done";
+            "barbaz_today_full.1.dar";
+            "barbaz_today_incr01.1.dar"]
+           (in_tmpdir ["srv"; "backup"]);
+         assert_bigger_size
+           (in_tmpdir ["srv"; "backup"; "foobar_today_full.1.dar"])
+           (in_tmpdir ["srv"; "backup"; "foobar_today_incr01.1.dar"]);
+       in
+         ());
   ]
 
 

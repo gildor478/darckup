@@ -26,14 +26,31 @@ type arg =
   | A of string (* A simple string. *)
   | Fn of string (* A filename, need to be quoted. *)
 
-type command_t = ?env:string array ->
-  ?errf:(string -> unit) -> ?outf:(string -> unit) -> string -> int
+(** Context for running commands. *)
+type 'a t = {
+  (** Environment. *)
+  env: string array;
+
+  (** Error output. *)
+  errf: string -> unit;
+
+  (** Standard output. *)
+  outf: string -> unit;
+
+  (** Handle exit code. *)
+  exitf: string -> int -> 'a;
+}
+
+(** Default context for running commands. This context uses stdout/stderr, the
+    default environment and raises a Failure if exit code is non-zero.
+  *)
+val default: unit t
 
 (** Run a command. *)
-val command: command_t
+val command: 'a t -> string -> 'a
+
+(** Convert exec arguments into a string. *)
+val string_of_exec: filename -> arg list -> string
 
 (** Run a command, taking care of escaping filenames, if needed. *)
-val exec:
-  ?env:string array ->
-  ?errf:(string -> unit) ->
-  ?outf:(string -> unit) -> filename -> arg list -> int
+val exec: 'a t -> filename -> arg list -> 'a

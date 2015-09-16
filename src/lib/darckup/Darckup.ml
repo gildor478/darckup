@@ -187,6 +187,10 @@ type archive_set = {
   base_prefix: string;
   max_incrementals: int;
   max_archives: int;
+  pre_create_command: string option;
+  post_create_command: string option;
+  pre_clean_command: string option;
+  post_clean_command: string option;
 }
 
 type outf = string -> unit
@@ -196,16 +200,12 @@ type env = string array
 type t = {
   dar: filename;
   now_rfc3339: string;
-  pre_create_command: string option;
-  post_create_command: string option;
-  pre_clean_command: string option;
-  post_clean_command: string option;
   ignore_glob_files: string list;
   archive_sets: (string * archive_set) list;
 
   (* System interface. *)
-  command: Command.command_t;
-  environment: unit -> env;
+  command: unit Command.t -> string -> unit;
+  exec: unit Command.t -> filename -> Command.arg list -> unit;
   readdir: filename -> filename array;
   remove: filename -> unit;
   getcwd: unit -> filename;
@@ -223,15 +223,11 @@ let default =
         let open CalendarLib in
           Printer.Calendar.sprint "%FT%T%:z" (Calendar.now ())
       end;
-    pre_create_command = None;
-    post_create_command = None;
-    pre_clean_command = None;
-    post_clean_command = None;
     ignore_glob_files = [];
     archive_sets = [];
 
     command = Command.command;
-    environment = Unix.environment;
+    exec = Command.exec;
     readdir = Sys.readdir;
     remove = Sys.remove;
     getcwd = Sys.getcwd;
@@ -339,30 +335,6 @@ let load t fn =
            {
              t with
                  dar = get ~default:t.dar identity sect "dar";
-                 pre_create_command =
-                   get
-                     ~default:t.pre_create_command
-                     (opt identity)
-                     sect
-                     "pre_create_command";
-                 post_create_command =
-                   get
-                     ~default:t.post_create_command
-                     (opt identity)
-                     sect
-                     "post_create_command";
-                 pre_clean_command =
-                   get
-                     ~default:t.pre_clean_command
-                     (opt identity)
-                     sect
-                     "pre_clean_command";
-                 post_clean_command =
-                   get
-                     ~default:t.post_clean_command
-                     (opt identity)
-                     sect
-                     "post_clean_command";
                  ignore_glob_files =
                    get
                      ~default:t.ignore_glob_files
@@ -379,10 +351,42 @@ let load t fn =
                  backup_dir = get directory_exists sect "backup_dir";
                  darrc = get file_exists sect "darrc";
                  base_prefix = get identity sect "base_prefix";
-                 max_incrementals = get ~default:6 (integer_with_min 0) sect
-                                      "max_incrementals";
-                 max_archives = get ~default:30 (integer_with_min 0) sect
-                                  "max_archives";
+                 max_incrementals =
+                   get
+                     ~default:6
+                     (integer_with_min 0)
+                     sect
+                     "max_incrementals";
+                 max_archives =
+                   get
+                     ~default:30
+                     (integer_with_min 0)
+                     sect
+                     "max_archives";
+                 pre_create_command =
+                   get
+                     ~default:None
+                     (opt identity)
+                     sect
+                     "pre_create_command";
+                 post_create_command =
+                   get
+                     ~default:None
+                     (opt identity)
+                     sect
+                     "post_create_command";
+                 pre_clean_command =
+                   get
+                     ~default:None
+                     (opt identity)
+                     sect
+                     "pre_clean_command";
+                 post_clean_command =
+                   get
+                     ~default:None
+                     (opt identity)
+                     sect
+                     "post_clean_command";
                }
              in
                {t with archive_sets = (aname, aset) :: t.archive_sets}
@@ -481,29 +485,20 @@ let load_archive_sets t =
 
 
 let create t =
-  let run_capture cmd =
-    t.command
-      ~env:(t.environment ())
-      ~outf:(logf t `Info "%s")
-      ~errf:(logf t `Warning "%s")
-      cmd
+  let command_default =
+    let open Command in
+    {default with outf = logf t `Info "%s"; errf = logf t `Warning "%s"}
   in
-  let run_opt field_name cmd_opt =
-    match cmd_opt with
+
+  let command_opt fld =
+    function
     | Some cmd ->
-        begin
-          logf t `Info "Running command %S from field %s." cmd field_name;
-          match run_capture cmd with
-          | 0 -> ()
-          | n ->
-              failwith
-                (Printf.sprintf
-                   "Command %S from field %s has failed with exit code %d."
-                   cmd field_name n);
-        end
+        logf t `Info "Running command %S from field %s." cmd fld;
+        t.command command_default cmd
     | None ->
-        logf t `Info "No command defined from field %s." field_name
+        logf t `Info "No command defined from field %s." fld
   in
+
   let lst =
     List.map
       (fun (aname, aset, archv) ->
@@ -512,40 +507,56 @@ let create t =
              (Filename.concat
                 aset.backup_dir (aset.base_prefix ^ "_" ^ t.now_rfc3339))
          in
+         let cmd_subst s_opt =
+           match s_opt with
+             | Some s ->
+                 let b = Buffer.create (String.length s) in
+                   Buffer.add_substitute b
+                     (function
+                        | "archive_prefix" ->
+                            Filename.quote (Archive.to_prefix a)
+                        | id ->
+                            failwith
+                              (Printf.sprintf
+                                 "Unknown identifier %S in command %S."
+                                 id s))
+                     s;
+                   Some (Buffer.contents b)
+             | None -> None
+         in
+         let dar_args =
+           let open Command in
+             [A "-c"; Fn (Archive.to_prefix a); A "-noconf";
+              A "-B"; Fn aset.darrc]
+             @ (if not (Archive.is_full a) then
+                  [A "-A"; Fn (Archive.to_full_prefix a)]
+                else
+                  [])
+         in
            (aname, a),
-           String.concat " "
-             (List.flatten
-                [
-                  [t.dar;
-                   "-c"; Filename.quote (Archive.to_prefix a);
-                   "-noconf";
-                   "-B"; Filename.quote aset.darrc];
-                  if not (Archive.is_full a) then
-                    ["-A"; Archive.to_full_prefix a]
-                  else
-                    [];
-                ]))
+           cmd_subst aset.pre_create_command,
+           dar_args,
+           cmd_subst aset.post_create_command)
       (load_archive_sets t)
   in
 
-  (* Invoke pre_command. *)
-  run_opt "pre_create_command" t.pre_create_command;
-
   (* Invoke dar for each archive_set. *)
   List.iter
-    (fun (_, cmd) ->
-       logf t `Info "Running command %S to create a dar archive." cmd;
-       match run_capture cmd with
-       | 0 -> ()
-       | n ->
-           failwith
-             (Printf.sprintf "Command %S has failed with exit code %d." cmd n))
+    (fun ((aname, _), pre_cmd, dar_args, post_cmd) ->
+          command_opt
+            (Printf.sprintf "archive:%s->pre_create_command" aname)
+            pre_cmd;
+          begin
+            logf t `Info "Creating dar archive with command %S."
+              (Command.string_of_exec t.dar dar_args);
+            t.exec command_default t.dar dar_args
+          end;
+          command_opt
+            (Printf.sprintf "archive:%s->post_create_command" aname)
+            post_cmd)
     lst;
 
-  (* Invoke post_command. *)
-  run_opt "post_create_command" t.post_create_command;
-
-  List.map fst lst
+  List.map (fun (fst, _, _, _) -> fst) lst
 
 
 let clean t =
