@@ -422,6 +422,14 @@ let load_archive_sets t =
       MapString.empty t.archive_sets
   in
 
+  let is_ignored =
+    let open Re in
+    let re =
+      compile (alt (List.map Re_glob.glob t.ignore_glob_files))
+    in
+      execp re
+  in
+
   let process_backup_dir backup_dir archive_sets map_names =
     (* We create on Re.group per archive_set and we use to know what
      * archive_set matches the given filename.
@@ -437,22 +445,24 @@ let load_archive_sets t =
          compile (seq [alt groups; rep any; str ".dar"; eol])
     in
     let test_assign bn =
-      (* Test if the basename match and cons the filename if yes. *)
-      try
-        let substr = Re.exec classifier_re bn in
-        let found = ref false in
-        let i = ref 0 in
-          while not !found && !i < Array.length files_lists do
-            if Re.test substr (!i + 1) then begin
-              files_lists.(!i) <-
-                Filename.concat backup_dir bn :: files_lists.(!i);
-              found := true
-            end;
-            incr i
-          done
-      with Not_found ->
-          logf t `Warning "File %S doesn't match any archive."
-          (Filename.concat backup_dir bn)
+      if not (is_ignored bn) then begin
+        (* Test if the basename match and cons the filename if yes. *)
+        try
+          let substr = Re.exec classifier_re bn in
+          let found = ref false in
+          let i = ref 0 in
+            while not !found && !i < Array.length files_lists do
+              if Re.test substr (!i + 1) then begin
+                files_lists.(!i) <-
+                  Filename.concat backup_dir bn :: files_lists.(!i);
+                found := true
+              end;
+              incr i
+            done
+        with Not_found ->
+            logf t `Warning "File %S doesn't match any archive."
+            (Filename.concat backup_dir bn)
+      end
     in
     let _, map_names =
       (* Group filenames from the backup directory per known prefix. *)

@@ -157,7 +157,7 @@ type t = {
 (** Default configuration. *)
 val default: t
 
-(** [load t ini] MErge configuration found in [ini] into the configuration [t].
+(** [load t ini] Merge configuration found in [ini] into the configuration [t].
   *)
 val load: t -> filename -> t
 

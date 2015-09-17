@@ -27,7 +27,7 @@ Library darckup
   Path:       src/lib/darckup
   Modules:    Darckup
   BuildDepends:
-    re (>= 1.1.0), re.pcre,
+    re (>= 1.1.0), re.pcre, re.glob,
     inifiles (>= 1.2),
     fileutils (>= 0.4.2),
     unix,

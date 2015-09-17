@@ -179,7 +179,11 @@ let tests =
          {
            default with
                now_rfc3339 = "today";
-               log = (fun lvl s -> logf test_ctxt lvl "%s" s);
+               log =
+                 (fun lvl s ->
+                    logf test_ctxt lvl "%s" s;
+                    if lvl = `Error || lvl = `Warning then
+                      failwith s);
          }
        in
        let tmpdir = bracket_tmpdir test_ctxt in
@@ -201,7 +205,7 @@ let tests =
          (* Create etc/darckup.ini. *)
          write_file ["etc"; "darckup.ini"]
            "[default]
-            ignore_glob_files=*.md5sums,*.meta
+            ignore_glob_files=*.md5sums,*.done
 
             [archive:foobar]
             backup_dir=${tmpdir}/srv/backup
@@ -224,6 +228,9 @@ let tests =
            "create:
             -w
             -D
+            -z
+            -aa
+            -ac
             -g var/foobar
             -R ${tmpdir}
             all:
@@ -241,6 +248,9 @@ let tests =
            "create:
             -w
             -D
+            -z
+            -aa
+            -ac
             -g var/barbaz
             -R ${tmpdir}
             all:
@@ -258,7 +268,7 @@ let tests =
        let () =
          (* Check result of loading INI file. *)
          StringListDiff.assert_equal
-           ["*.md5sums"; "*.meta"] t.ignore_glob_files;
+           ["*.md5sums"; "*.done"] t.ignore_glob_files;
          StringListDiff.assert_equal
            ["foobar"; "barbaz"] (List.map fst t.archive_sets);
        in
@@ -286,8 +296,6 @@ let tests =
        let _lst = create t in
        let () =
          (* Check result of second run. *)
-         assert_command ~ctxt:test_ctxt
-           "ls" ["-l"; "-a"; in_tmpdir ["srv"; "backup"]];
          assert_equal_dir_list
            ["foobar_today_full.1.dar";
             "foobar_today_full.done";
