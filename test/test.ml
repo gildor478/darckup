@@ -181,7 +181,12 @@ let tests =
                now_rfc3339 = "today";
                log =
                  (fun lvl s ->
-                    logf test_ctxt lvl "%s" s;
+                    begin
+                      match lvl with
+                      | `Debug -> ()
+                      | (`Info | `Warning | `Error) as lvl' ->
+                          logf test_ctxt lvl' "%s" s
+                    end;
                     if lvl = `Error || lvl = `Warning then
                       failwith s);
          }

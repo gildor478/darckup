@@ -151,7 +151,7 @@ type t = {
   getcwd: unit -> filename;
   file_exists: filename -> bool;
   is_directory: filename -> bool;
-  log: [`Info | `Warning | `Error] -> string -> unit;
+  log: [`Debug | `Info | `Warning | `Error] -> string -> unit;
 }
 
 (** Default configuration. *)
@@ -161,9 +161,26 @@ val default: t
   *)
 val load: t -> filename -> t
 
+(** [load_archive_sets t] Transform [t.archive_sets] into [ArchiveSet.t list].
+  *)
+val load_archive_sets: t -> (string * archive_set * ArchiveSet.t) list
+
 (** Create archives and return the created archives.
   *)
 val create: t -> (string * Archive.t) list
 
-(** Clean up archives, to match max archives constraint. *)
+(** Clean up archives, to match max archives constraint.
+  *)
 val clean: t -> unit
+
+(** An environment variable.
+  *)
+type variable = string
+
+(** Retrieve value from environment variable.
+  *)
+val getenv: t -> ?current_archive_set:string -> variable -> string
+
+(** List of available variables and a short help text.
+  *)
+val getenv_variables: (variable * string) list

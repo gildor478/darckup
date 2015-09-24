@@ -211,7 +211,7 @@ type t = {
   getcwd: unit -> filename;
   file_exists: filename -> bool;
   is_directory: filename -> bool;
-  log: [`Info | `Warning | `Error] -> string -> unit;
+  log: [`Debug | `Info | `Warning | `Error] -> string -> unit;
 }
 
 
@@ -571,3 +571,18 @@ let create t =
 
 let clean t =
   failwith "Not implemented"
+
+
+type variable = string
+
+
+let getenv t ?current_archive_set variable =
+  failwith "Not implemented"
+
+
+let getenv_variables =
+  ["current.name", "name of archive_set currently processed.";
+   "current.filenames", "list of all files for the current archive_set.";
+   "current.last.prefix", "archive_prefix of the last created archive.";
+   "all_archive_sets",  "all available archive_sets."]
+

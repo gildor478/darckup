@@ -1,7 +1,7 @@
 OASISFormat:  0.4
 OCamlVersion: >= 3.12.0
 Name:         darckup
-Version: 0.0.2
+Version:      0.0.2
 Synopsis:     Manage dar backups.
 Authors:      Sylvain Le Gall
 Copyrights:   (C) 2015 Sylvain Le Gall
@@ -19,8 +19,8 @@ Description:
    - mulitple backups creation
 
 Library command
-  Path:       src/lib/command
-  Modules:    Command
+  Path:         src/lib/command
+  Modules:      Command
   BuildDepends: unix
 
 Library darckup
@@ -37,7 +37,7 @@ Library darckup
 Executable darckup
   Path:         src/bin/darckup
   MainIs:       main.ml
-  BuildDepends: darckup
+  BuildDepends: darckup, cmdliner
 
 Executable test
   Path:         test
