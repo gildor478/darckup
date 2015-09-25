@@ -18,6 +18,10 @@ Description:
    - upload to remote server
    - mulitple backups creation
 
+#
+# Library and executable.
+#
+
 Library command
   Path:         src/lib/command
   Modules:      Command
@@ -38,6 +42,121 @@ Executable darckup
   Path:         src/bin/darckup
   MainIs:       main.ml
   BuildDepends: darckup, cmdliner
+
+#
+# Documentation
+#
+
+Document "api-darckup"
+  Title:                API reference for Darckup
+  Type:                 OCamlbuild (0.4)
+  InstallDir:           $htmldir/darckup
+  BuildTools+:          ocamldoc
+  XOCamlbuildPath:      src/lib/darckup
+  XOCamlbuildLibraries: darckup
+
+Document "api-command"
+  Title:                API reference for Command
+  Type:                 OCamlbuild (0.4)
+  InstallDir:           $htmldir/command
+  BuildTools+:          ocamldoc
+  XOCamlbuildPath:      src/lib/command
+  XOCamlbuildLibraries: command
+
+Document "darckup.1"
+  Title:   Manpage for darckup.
+  Type:    Custom (0.4)
+  Format:  Other
+  XCustom: $darckup --help=groff > doc/darckup.1
+  XCustomClean: $rm doc/darckup.1
+  InstallDir: $mandir/man1
+  DataFiles: doc/darckup.1
+  BuildTools: darckup
+
+Document "darckup-clean.1"
+  Title:   Manpage for 'darckup clean'.
+  Type:    Custom (0.4)
+  Format:  Other
+  XCustom: $darckup clean --help=groff > doc/darckup-clean.1
+  XCustomClean: $rm doc/darckup-clean.1
+  InstallDir: $mandir/man1
+  DataFiles: doc/darckup-clean.1
+  BuildTools: darckup
+
+Document "darckup-create.1"
+  Title:   Manpage for 'darckup create'.
+  Type:    Custom (0.4)
+  Format:  Other
+  XCustom: $darckup create --help=groff > doc/darckup-create.1
+  XCustomClean: $rm doc/darckup-create.1
+  InstallDir: $mandir/man1
+  DataFiles: doc/darckup-create.1
+  BuildTools: darckup
+
+Document "darckup-cronjob.1"
+  Title:   Manpage for 'darckup cronjob'.
+  Type:    Custom (0.4)
+  Format:  Other
+  XCustom: $darckup cronjob --help=groff > doc/darckup-cronjob.1
+  XCustomClean: $rm doc/darckup-cronjob.1
+  InstallDir: $mandir/man1
+  DataFiles: doc/darckup-cronjob.1
+  BuildTools: darckup
+
+Document "darckup-getenv.1"
+  Title:   Manpage for 'darckup getenv'.
+  Type:    Custom (0.4)
+  Format:  Other
+  XCustom: $darckup getenv --help=groff > doc/darckup-getenv.1
+  XCustomClean: $rm doc/darckup-getenv.1
+  InstallDir: $mandir/man1
+  DataFiles: doc/darckup-getenv.1
+  BuildTools: darckup
+
+Document "darckup-help.1"
+  Title:   Manpage for 'darckup help'.
+  Type:    Custom (0.4)
+  Format:  Other
+  XCustom: $darckup help --help=groff > doc/darckup-help.1
+  XCustomClean: $rm doc/darckup-help.1
+  InstallDir: $mandir/man1
+  DataFiles: doc/darckup-help.1
+  BuildTools: darckup
+
+Document "darckup-list.1"
+  Title:   Manpage for darckup-list.
+  Type:    Custom (0.4)
+  Format:  Other
+  XCustom: $darckup list --help=groff > doc/darckup-list.1
+  XCustomClean: $rm doc/darckup-list.1
+  InstallDir: $mandir/man1
+  DataFiles: doc/darckup-list.1
+  BuildTools: darckup
+
+Document "darckup-list_archive.1"
+  Title:   Manpage for 'darckup list_archive'.
+  Type:    Custom (0.4)
+  Format:  Other
+  XCustom: $darckup list_archive --help=groff > doc/darckup-list_archive.1
+  XCustomClean: $rm doc/darckup-list_archive.1
+  InstallDir: $mandir/man1
+  DataFiles: doc/darckup-list_archive.1
+  BuildTools: darckup
+
+Document "darckup-hook.7"
+  Title:   Manpage for hook usage in darckup.
+  Type:    Custom (0.4)
+  Format:  Other
+  XCustom: $darckup help hook --man-format=groff > doc/darckup-hook.7
+  XCustomClean: $rm doc/darckup-hook.7
+  InstallDir: $mandir/man7
+  DataFiles: doc/darckup-hook.7
+  BuildTools: darckup
+
+
+#
+# Tests
+#
 
 Executable test
   Path:         test

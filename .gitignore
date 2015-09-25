@@ -5,3 +5,6 @@
 /_build/
 /dist/
 /src/bin/darckup/conf.ml
+/doc/*.1
+/doc/*.7
+/api-command.docdir
