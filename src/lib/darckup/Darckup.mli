@@ -165,9 +165,10 @@ type t = {
 (** Default configuration. *)
 val default: t
 
-(** [load t ini] Merge configuration found in [ini] into the configuration [t].
+(** [load_configuration t ~dir ini] Merge configuration found in [ini] and then
+    all '.ini' files in [~dir], into the configuration [t].
   *)
-val load: t -> filename -> t
+val load_configuration: t -> ?dir:filename -> filename -> t
 
 (** [load_archive_sets t] Transform [t.archive_sets] into [ArchiveSet.t list].
   *)

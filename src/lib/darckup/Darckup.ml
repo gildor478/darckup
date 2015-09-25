@@ -242,7 +242,7 @@ let default =
 let logf t lvl fmt = Printf.ksprintf (t.log lvl) fmt
 
 
-let load t fn =
+let load_one_configuration t fn =
   let ini =
     try
       new Inifiles.inifile fn
@@ -283,12 +283,12 @@ let load t fn =
 
   let to_absolute fn dn =
     if FilePath.is_relative fn then
-      FilePath.make_absolute fn dn
+      FilePath.make_absolute dn fn
     else
       fn
   in
 
-  let dn = to_absolute fn (t.getcwd ()) in
+  let dn = Filename.dirname (to_absolute fn (t.getcwd ())) in
 
   let directory_exists fn =
     let fn' = to_absolute fn dn in
@@ -401,6 +401,30 @@ let load t fn =
   in
     {t with archive_sets = List.rev t.archive_sets}
 
+
+let load_configuration t ?dir fn =
+  let lst =
+    fn ::
+    match dir with
+    | Some dn when t.file_exists dn && t.is_directory dn ->
+        let arr = t.readdir dn in
+          Array.sort String.compare arr;
+          Array.fold_right
+            (fun fn lst ->
+               if Filename.check_suffix fn ".ini" then
+                 Filename.concat dn fn :: lst
+               else
+                 lst)
+            arr []
+    | _ -> []
+  in
+    List.fold_left
+      (fun t fn ->
+         if t.file_exists fn then
+           load_one_configuration t fn
+         else
+           t)
+      t lst
 
 let load_archive_sets t =
   let module MapString =

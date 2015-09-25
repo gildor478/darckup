@@ -121,23 +121,8 @@ let help copts man_format cmds topic =
 
 let t ?(asopts=fun _ -> true) copts =
   let open Darckup in
-  let lst =
-    copts.ini ::
-    if Sys.file_exists copts.ini_d && Sys.is_directory copts.ini_d then
-      Array.fold_right
-        (fun fn lst ->
-           if Filename.check_suffix fn ".ini" then
-             Filename.concat copts.ini_d fn :: lst
-           else
-             lst)
-        (Sys.readdir copts.ini_d) []
-    else
-      []
-  in
   let t =
-    List.fold_left
-      (fun t fn -> if Sys.file_exists fn then load t fn else t)
-      default lst
+    load_configuration default ~dir:copts.ini_d copts.ini
   in
   let if_opt e = function Some e -> e | None -> e in
     {

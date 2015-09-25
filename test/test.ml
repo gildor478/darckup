@@ -211,8 +211,9 @@ let tests =
          write_file ["etc"; "darckup.ini"]
            "[default]
             ignore_glob_files=*.md5sums,*.done
-
-            [archive_set:foobar]
+           ";
+         write_file ["etc"; "darckup.ini.d"; "00foobar.ini"]
+           "[archive_set:foobar]
             backup_dir=${tmpdir}/srv/backup
             darrc=${tmpdir}/etc/foobar.darrc
             post_create_command=touch \\${archive_prefix}.done
@@ -220,10 +221,11 @@ let tests =
             base_prefix=foobar
             max_incrementals=2
             max_archives=3
-
-            [archive_set:barbaz]
+           ";
+         write_file ["etc"; "darckup.ini.d"; "01barbaz.ini"]
+           "[archive_set:barbaz]
             backup_dir=${tmpdir}/srv/backup
-            darrc=${tmpdir}/etc/barbaz.darrc
+            darrc=../barbaz.darrc
             base_prefix=barbaz
             max_incrementals=1
             max_archives=3
@@ -269,7 +271,11 @@ let tests =
             -Z *.zip
            "
        in
-       let t = load t (in_tmpdir ["etc"; "darckup.ini"]) in
+       let t =
+         load_configuration t
+           ~dir:(in_tmpdir ["etc"; "darckup.ini.d"])
+           (in_tmpdir ["etc"; "darckup.ini"])
+       in
        let () =
          (* Check result of loading INI file. *)
          StringListDiff.assert_equal
