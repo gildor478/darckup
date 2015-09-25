@@ -553,7 +553,7 @@ let create t =
                  let b = Buffer.create (String.length s) in
                    Buffer.add_substitute b
                      (function
-                        | "archive_prefix" ->
+                        | "current.last.prefix" ->
                             Filename.quote (Archive.to_prefix a)
                         | id ->
                             failwith
@@ -613,6 +613,6 @@ let getenv t ?current_archive_set variable =
 let getenv_variables =
   ["current.name", "name of archive_set currently processed.";
    "current.filenames", "list of all files for the current archive_set.";
-   "current.last.prefix", "archive_prefix of the last created archive.";
+   "current.last.prefix", "archive prefix of the last created archive.";
    "all_archive_sets",  "all available archive_sets."]
 

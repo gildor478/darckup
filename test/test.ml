@@ -216,8 +216,8 @@ let tests =
            "[archive_set:foobar]
             backup_dir=${tmpdir}/srv/backup
             darrc=${tmpdir}/etc/foobar.darrc
-            post_create_command=touch \\${archive_prefix}.done
-            post_clean_command=rm \\${archive_prefix}.done
+            post_create_command=touch \\${current.last.prefix}.done
+            post_clean_command=rm \\${current.last.prefix}.done
             base_prefix=foobar
             max_incrementals=2
             max_archives=3
@@ -286,9 +286,11 @@ let tests =
        let afoobar = List.assoc "foobar" t.archive_sets in
        let () =
          assert_equal ~printer:(function Some s -> s | None -> "none")
-           (Some "touch ${archive_prefix}.done") afoobar.post_create_command;
+           (Some "touch ${current.last.prefix}.done")
+           afoobar.post_create_command;
          assert_equal ~printer:(function Some s -> s | None -> "none")
-           (Some "rm ${archive_prefix}.done") afoobar.post_clean_command;
+           (Some "rm ${current.last.prefix}.done")
+           afoobar.post_clean_command;
          assert_equal ~printer:(fun s -> s) "foobar" afoobar.base_prefix;
          assert_equal ~printer:string_of_int 2 afoobar.max_incrementals;
          assert_equal ~printer:string_of_int
