@@ -129,21 +129,29 @@ type archive_set = {
 
 (** Configuration for Darckup high level commands. *)
 type t = {
-  (** The dar binary. *)
+  (** The dar binary.
+    *)
   dar: filename;
 
-  (** A time string that will be used to compose name of new full archive. *)
+  (** A time string that will be used to compose name of new full archive.
+    *)
   now_rfc3339: string;
+
+  (** Don't run, just simulate running.
+    *)
+  dry_run: bool;
 
   (** File to ignore when scanning backup directories when scanning
       for archives.
     *)
   ignore_glob_files: string list;
 
-  (** All the available archives and the name of each. *)
+  (** All the available archives and the name of each.
+    *)
   archive_sets: (string * archive_set) list;
 
-  (* System interface. *)
+  (** System interface.
+    *)
   command: unit Command.t -> string -> unit;
   exec: unit Command.t -> filename -> Command.arg list -> unit;
   readdir: filename -> filename array;

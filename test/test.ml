@@ -289,6 +289,7 @@ let tests =
            3 (List.assoc "foobar" t.archive_sets).max_archives
        in
        let _ = create t in
+       let _ = create {t with dry_run = true} in
        let () =
          (* Check result of first run. *)
          assert_equal_dir_list
@@ -299,6 +300,7 @@ let tests =
        in
        let t = {t with now_rfc3339 = "1dayafter"} in
        let _lst = create t in
+       let _lst = create {t with dry_run = true} in
        let () =
          (* Check result of second run. *)
          assert_equal_dir_list

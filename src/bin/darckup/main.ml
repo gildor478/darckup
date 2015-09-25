@@ -24,7 +24,7 @@ open Cmdliner
 type copts =
   {
     logging_filter: [`Error|`Warning|`Info|`Debug] -> bool;
-    dry_run: bool; (* TODO *)
+    cdry_run: bool;
     cdar: string option;
     cnow_rfc3339: string option;
     ini: filename;
@@ -144,6 +144,7 @@ let t ?(asopts=fun _ -> true) copts =
       t with
           archive_sets = List.filter (fun  (s, _) -> asopts s) t.archive_sets;
           dar = if_opt t.dar copts.cdar;
+          dry_run = copts.cdry_run;
           now_rfc3339 = if_opt t.now_rfc3339 copts.cnow_rfc3339;
           log = (fun lvl s -> if copts.logging_filter lvl then t.log lvl s);
     }
@@ -255,7 +256,7 @@ let copts_t =
   let copts logging_filter dry_run dar now_rfc3339 ini ini_d =
     {
       logging_filter;
-      dry_run;
+      cdry_run = dry_run;
       cdar = dar;
       cnow_rfc3339 = now_rfc3339;
       ini;

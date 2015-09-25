@@ -200,6 +200,7 @@ type env = string array
 type t = {
   dar: filename;
   now_rfc3339: string;
+  dry_run: bool;
   ignore_glob_files: string list;
   archive_sets: (string * archive_set) list;
 
@@ -223,6 +224,7 @@ let default =
         let open CalendarLib in
           Printer.Calendar.sprint "%FT%T%:z" (Calendar.now ())
       end;
+    dry_run = false;
     ignore_glob_files = [];
     archive_sets = [];
 
@@ -496,8 +498,12 @@ let load_archive_sets t =
 
 let create t =
   let command_default =
+    let tdry_run = t.dry_run in
     let open Command in
-    {default with outf = logf t `Info "%s"; errf = logf t `Warning "%s"}
+    {default with
+         outf = logf t `Info "%s";
+         errf = logf t `Warning "%s";
+         dry_run = tdry_run}
   in
 
   let command_opt fld =

@@ -26,19 +26,28 @@ type arg =
   | A of string (* A simple string. *)
   | Fn of string (* A filename, need to be quoted. *)
 
-(** Context for running commands. *)
+(** Context for running commands.
+  *)
 type 'a t = {
-  (** Environment. *)
+  (** Environment.
+    *)
   env: string array;
 
-  (** Error output. *)
+  (** Error output.
+    *)
   errf: string -> unit;
 
-  (** Standard output. *)
+  (** Standard output.
+    *)
   outf: string -> unit;
 
-  (** Handle exit code. *)
+  (** Handle exit code.
+    *)
   exitf: string -> int -> 'a;
+
+  (** Don't run, just simulate running.
+    *)
+  dry_run: bool;
 }
 
 (** Default context for running commands. This context uses stdout/stderr, the
@@ -46,11 +55,14 @@ type 'a t = {
   *)
 val default: unit t
 
-(** Run a command. *)
+(** Run a command.
+  *)
 val command: 'a t -> string -> 'a
 
-(** Convert exec arguments into a string. *)
+(** Convert exec arguments into a string.
+  *)
 val string_of_exec: filename -> arg list -> string
 
-(** Run a command, taking care of escaping filenames, if needed. *)
+(** Run a command, taking care of escaping filenames, if needed.
+  *)
 val exec: 'a t -> filename -> arg list -> 'a
