@@ -212,7 +212,7 @@ let tests =
            "[default]
             ignore_glob_files=*.md5sums,*.done
 
-            [archive:foobar]
+            [archive_set:foobar]
             backup_dir=${tmpdir}/srv/backup
             darrc=${tmpdir}/etc/foobar.darrc
             post_create_command=touch \\${archive_prefix}.done
@@ -221,7 +221,7 @@ let tests =
             max_incrementals=2
             max_archives=3
 
-            [archive:barbaz]
+            [archive_set:barbaz]
             backup_dir=${tmpdir}/srv/backup
             darrc=${tmpdir}/etc/barbaz.darrc
             base_prefix=barbaz

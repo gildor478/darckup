@@ -327,7 +327,7 @@ let load t fn =
   let opt f s = Some (f s) in
 
   let re_archive =
-    let open Re in compile (seq [str "archive:"; group (rep1 any); eol])
+    let open Re in compile (seq [str "archive_set:"; group (rep1 any); eol])
   in
 
   let t =
@@ -560,7 +560,7 @@ let create t =
   List.iter
     (fun ((aname, _), pre_cmd, dar_args, post_cmd) ->
           command_opt
-            (Printf.sprintf "archive:%s->pre_create_command" aname)
+            (Printf.sprintf "archive_set:%s->pre_create_command" aname)
             pre_cmd;
           begin
             logf t `Info "Creating dar archive with command %S."
@@ -568,7 +568,7 @@ let create t =
             t.exec command_default t.dar dar_args
           end;
           command_opt
-            (Printf.sprintf "archive:%s->post_create_command" aname)
+            (Printf.sprintf "archive_set:%s->post_create_command" aname)
             post_cmd)
     lst;
 
