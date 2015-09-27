@@ -436,6 +436,7 @@ let load_configuration t ?dir fn =
            t)
       t lst
 
+
 let load_archive_sets t =
   let module MapString =
     Map.Make
@@ -530,87 +531,118 @@ let load_archive_sets t =
       t.archive_sets
 
 
+let command_default t =
+  let tdry_run = t.dry_run in
+  let open Command in
+  {default with
+       outf = logf t `Info "%s";
+       errf = logf t `Warning "%s";
+       dry_run = tdry_run}
+
+
+let run_hook t aname aset archv fname cmd_opt =
+  match cmd_opt with
+  | Some s ->
+      begin
+        let cmd =
+          let b = Buffer.create (String.length s) in
+            Buffer.add_substitute b
+              (function
+                 | "current.last.prefix" ->
+                     Filename.quote (Archive.to_prefix archv)
+                 | id ->
+                     failwith
+                       (Printf.sprintf
+                          "Unknown identifier %S in command %S."
+                          id s))
+              s;
+            Buffer.contents b
+        in
+          fun () ->
+            logf t `Info "Running command %S for archive_set:%s->%s."
+              cmd aname fname;
+            t.command (command_default t) cmd
+      end
+  | None ->
+      fun () ->
+        logf t `Info "No command defined for archive_set:%s->%s."
+          aname fname
+
+
 let create t =
-  let command_default =
-    let tdry_run = t.dry_run in
-    let open Command in
-    {default with
-         outf = logf t `Info "%s";
-         errf = logf t `Warning "%s";
-         dry_run = tdry_run}
-  in
-
-  let command_opt fld =
-    function
-    | Some cmd ->
-        logf t `Info "Running command %S from field %s." cmd fld;
-        t.command command_default cmd
-    | None ->
-        logf t `Info "No command defined from field %s." fld
-  in
-
   let lst =
     List.map
-      (fun (aname, aset, archv) ->
-         let a =
-           ArchiveSet.next archv aset.max_incrementals
+      (fun (aname, aset, archv_set) ->
+         let archv =
+           ArchiveSet.next archv_set aset.max_incrementals
              (Filename.concat
                 aset.backup_dir (aset.base_prefix ^ "_" ^ t.now_rfc3339))
          in
-         let cmd_subst s_opt =
-           match s_opt with
-             | Some s ->
-                 let b = Buffer.create (String.length s) in
-                   Buffer.add_substitute b
-                     (function
-                        | "current.last.prefix" ->
-                            Filename.quote (Archive.to_prefix a)
-                        | id ->
-                            failwith
-                              (Printf.sprintf
-                                 "Unknown identifier %S in command %S."
-                                 id s))
-                     s;
-                   Some (Buffer.contents b)
-             | None -> None
-         in
          let dar_args =
            let open Command in
-             [A "-c"; Fn (Archive.to_prefix a); A "-noconf";
+             [A "-c"; Fn (Archive.to_prefix archv); A "-noconf";
               A "-B"; Fn aset.darrc]
-             @ (if not (Archive.is_full a) then
-                  [A "-A"; Fn (Archive.to_full_prefix a)]
+             @ (if not (Archive.is_full archv) then
+                  [A "-A"; Fn (Archive.to_full_prefix archv)]
                 else
                   [])
          in
-           (aname, a),
-           cmd_subst aset.pre_create_command,
+           (aname, archv),
+           (run_hook t aname aset archv
+              "pre_create_command" aset.pre_create_command),
            dar_args,
-           cmd_subst aset.post_create_command)
+           (run_hook t aname aset archv
+              "post_create_command" aset.post_create_command))
       (load_archive_sets t)
   in
 
   (* Invoke dar for each archive_set. *)
   List.iter
     (fun ((aname, _), pre_cmd, dar_args, post_cmd) ->
-          command_opt
-            (Printf.sprintf "archive_set:%s->pre_create_command" aname)
-            pre_cmd;
-          begin
-            logf t `Info "Creating dar archive with command %S."
-              (Command.string_of_exec t.dar dar_args);
-            t.exec command_default t.dar dar_args
-          end;
-          command_opt
-            (Printf.sprintf "archive_set:%s->post_create_command" aname)
-            post_cmd)
+       pre_cmd ();
+       logf t `Info "Creating dar archive with command %S."
+         (Command.string_of_exec t.dar dar_args);
+       t.exec (command_default t) t.dar dar_args;
+       post_cmd ())
     lst;
 
   List.map (fun (fst, _, _, _) -> fst) lst
 
 
 let clean t =
-  failwith "Not implemented"
+  let clean_one_archive_set (aname, aset, archv_set) =
+    let d = ArchiveSet.length archv_set - aset.max_archives in
+      logf t `Info
+        "Cleaning archive_set:%s: %d archives present, will remove %d of them."
+        aname (ArchiveSet.length archv_set) d;
+      if d > 0 then
+        List.map
+          (fun archv ->
+             aname,
+             run_hook t aname aset archv
+               "pre_clean_command" aset.pre_clean_command,
+             Archive.to_filenames archv,
+             run_hook t aname aset archv
+               "post_clean_command" aset.post_clean_command)
+          (snd (ArchiveSet.npop d archv_set))
+      else
+        []
+  in
+  let lst =
+    List.flatten (List.map clean_one_archive_set (load_archive_sets t))
+  in
+    List.iter
+      (fun (aname, pre_cmd, fn_lst, post_cmd) ->
+         pre_cmd ();
+         List.iter
+           (fun fn ->
+              logf t `Info "Removing file %s (cleaning of archive %s)"
+                fn aname;
+              if not t.dry_run then
+                t.remove fn)
+           fn_lst;
+         post_cmd ())
+      lst
 
 
 type variable = string

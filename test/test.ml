@@ -187,7 +187,7 @@ let tests =
        let t =
          {
            default with
-               now_rfc3339 = "today";
+               now_rfc3339 = "20150926";
                log =
                  (fun lvl s ->
                     begin
@@ -305,32 +305,94 @@ let tests =
          assert_equal ~printer:string_of_int
            3 (List.assoc "foobar" t.archive_sets).max_archives
        in
-       let _ = create t in
        let _ = create {t with dry_run = true} in
+       let _ = create t in
        let () =
          (* Check result of first run. *)
          assert_equal_dir_list
-           ["foobar_today_full.1.dar";
-            "foobar_today_full.done";
-            "barbaz_today_full.1.dar"]
+           ["foobar_20150926_full.1.dar";
+            "foobar_20150926_full.done";
+
+            "barbaz_20150926_full.1.dar"]
            (in_tmpdir ["srv"; "backup"])
        in
-       let t = {t with now_rfc3339 = "1dayafter"} in
-       let _lst = create t in
+       let t = {t with now_rfc3339 = "20150927"} in
        let _lst = create {t with dry_run = true} in
+       let _lst = create t in
        let () =
          (* Check result of second run. *)
          assert_equal_dir_list
-           ["foobar_today_full.1.dar";
-            "foobar_today_full.done";
-            "foobar_today_incr01.1.dar";
-            "foobar_today_incr01.done";
-            "barbaz_today_full.1.dar";
-            "barbaz_today_incr01.1.dar"]
+           ["foobar_20150926_full.1.dar";
+            "foobar_20150926_full.done";
+            "foobar_20150926_incr01.1.dar";
+            "foobar_20150926_incr01.done";
+
+            "barbaz_20150926_full.1.dar";
+            "barbaz_20150926_incr01.1.dar"]
            (in_tmpdir ["srv"; "backup"]);
          assert_bigger_size
-           (in_tmpdir ["srv"; "backup"; "foobar_today_full.1.dar"])
-           (in_tmpdir ["srv"; "backup"; "foobar_today_incr01.1.dar"]);
+           (in_tmpdir ["srv"; "backup"; "foobar_20150926_full.1.dar"])
+           (in_tmpdir ["srv"; "backup"; "foobar_20150926_incr01.1.dar"]);
+       in
+       (* Simulate a few days run. *)
+       let t = {t with now_rfc3339 = "20150928"} in
+       let _lst = create t in
+       let t = {t with now_rfc3339 = "20150929"} in
+       let _lst = create t in
+       let t = {t with now_rfc3339 = "20150930"} in
+       let _lst = create t in
+       let t = {t with now_rfc3339 = "20151001"} in
+       let _lst = create t in
+       let current_files =
+         ["foobar_20150926_full.1.dar";
+          "foobar_20150926_full.done";
+          "foobar_20150926_incr01.1.dar";
+          "foobar_20150926_incr01.done";
+          "foobar_20150926_incr02.1.dar";
+          "foobar_20150926_incr02.done";
+          "foobar_20150929_full.1.dar";
+          "foobar_20150929_full.done";
+          "foobar_20150929_incr01.1.dar";
+          "foobar_20150929_incr01.done";
+          "foobar_20150929_incr02.1.dar";
+          "foobar_20150929_incr02.done";
+
+          "barbaz_20150926_full.1.dar";
+          "barbaz_20150926_incr01.1.dar";
+          "barbaz_20150928_full.1.dar";
+          "barbaz_20150928_incr01.1.dar";
+          "barbaz_20150930_full.1.dar";
+          "barbaz_20150930_incr01.1.dar"]
+       in
+       let () =
+         (* Check result of second run. *)
+         assert_equal_dir_list current_files (in_tmpdir ["srv"; "backup"]);
+       in
+       let () = clean {t with dry_run = true} in
+       let () =
+         (* Check no changes with dry_run. *)
+         assert_equal_dir_list current_files (in_tmpdir ["srv"; "backup"])
+       in
+       let () = clean t in
+       let current_files =
+         ["foobar_20150929_full.1.dar";
+          "foobar_20150929_full.done";
+          "foobar_20150929_incr01.1.dar";
+          "foobar_20150929_incr01.done";
+          "foobar_20150929_incr02.1.dar";
+          "foobar_20150929_incr02.done";
+          "barbaz_20150928_full.1.dar";
+          "barbaz_20150930_full.1.dar";
+          "barbaz_20150930_incr01.1.dar"]
+       in
+       let () =
+         (* Check result of clean. *)
+         assert_equal_dir_list current_files (in_tmpdir ["srv"; "backup"])
+       in
+       let () = clean t in
+       let () =
+         (* Check result of 2nd clean. *)
+         assert_equal_dir_list current_files (in_tmpdir ["srv"; "backup"])
        in
          ());
   ]
