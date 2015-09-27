@@ -71,7 +71,9 @@ PRECOMMIT_ARGS= \
 	    --exclude Makefile \
 	    --exclude configure \
 	    --exclude _tags \
-			--exclude dist
+			--exclude dist \
+			--exclude doc \
+			--exclude src/bin/darckup/conf.ml
 
 precommit:
 	-@if command -v OCamlPrecommit > /dev/null; then \
