@@ -169,6 +169,15 @@ let tests =
            ~printer:(fun s -> s)
            "foobar_20150905_incr02"
            (Archive.to_prefix (ArchiveSet.next set 2 "foobar_20150907"));
+         begin
+           try
+             let _t: Archive.t = ArchiveSet.next set 1 "foobar_20150904" in
+               assert_failure
+                 "ArchiveSet.next create an archive that will not be the \
+                  last one."
+           with Failure _ ->
+             ()
+         end;
 
          ()
     );

@@ -145,18 +145,28 @@ struct
           volumes = IntMap.empty;
         }
     in
-    if max_incremental <= 0 || length t = 0 then begin
-      full
-    end else begin
-      match last t with
-        | { kind = Full } as a ->
-            make {a with kind = Incremental 1}
-        | { kind = Incremental n } as a ->
-            if n + 1 <= max_incremental then
-              make {a with kind = Incremental (n + 1)}
-            else
-              full
-    end
+    let a =
+      if max_incremental <= 0 || length t = 0 then begin
+        full
+      end else begin
+        match last t with
+          | { kind = Full } as a ->
+              make {a with kind = Incremental 1}
+          | { kind = Incremental n } as a ->
+              if n + 1 <= max_incremental then
+                make {a with kind = Incremental (n + 1)}
+              else
+                full
+      end
+    in
+      if not (length t = 0) && (last (add a t)) <> a then
+        failwith
+          (Printf.sprintf
+             "Next archive %s will not be sorted as the last one, reset the \
+              now_rfc3339 string to make sure the result will be sorted \
+              after %s (the actual last one)"
+             (Archive.to_prefix a) (Archive.to_prefix (last t)));
+      a
 
   let rec pop t =
     let prefix, a = M.min_binding t in
