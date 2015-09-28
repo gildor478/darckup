@@ -220,6 +220,8 @@ let tests =
          write_file ["etc"; "darckup.ini"]
            "[default]
             ignore_glob_files=*.md5sums,*.done
+            post_create_command=touch \"${tmpdir}/sync-done\"
+            post_clean_command=rm -f \"${tmpdir}/sync-done\"
            ";
          write_file ["etc"; "darckup.ini.d"; "00foobar.ini"]
            "[archive_set:foobar]
@@ -295,11 +297,14 @@ let tests =
        let afoobar = List.assoc "foobar" t.archive_sets in
        let () =
          assert_equal ~printer:(function Some s -> s | None -> "none")
+           (Some ("touch \"" ^ tmpdir ^ "/sync-done\""))
+           t.global_hooks.post_create_command;
+         assert_equal ~printer:(function Some s -> s | None -> "none")
            (Some "touch ${current.last.prefix}.done")
-           afoobar.post_create_command;
+           afoobar.archive_set_hooks.post_create_command;
          assert_equal ~printer:(function Some s -> s | None -> "none")
            (Some "rm ${current.last.prefix}.done")
-           afoobar.post_clean_command;
+           afoobar.archive_set_hooks.post_clean_command;
          assert_equal ~printer:(fun s -> s) "foobar" afoobar.base_prefix;
          assert_equal ~printer:string_of_int 2 afoobar.max_incrementals;
          assert_equal ~printer:string_of_int
@@ -321,6 +326,9 @@ let tests =
        let _lst = create t in
        let () =
          (* Check result of second run. *)
+         assert_equal_dir_list
+           ["srv"; "etc"; "var"; "sync-done"]
+           (in_tmpdir []);
          assert_equal_dir_list
            ["foobar_20150926_full.1.dar";
             "foobar_20150926_full.done";
@@ -366,11 +374,17 @@ let tests =
        in
        let () =
          (* Check result of second run. *)
+         assert_equal_dir_list
+           ["srv"; "etc"; "var"; "sync-done"]
+           (in_tmpdir []);
          assert_equal_dir_list current_files (in_tmpdir ["srv"; "backup"]);
        in
        let () = clean {t with dry_run = true} in
        let () =
          (* Check no changes with dry_run. *)
+         assert_equal_dir_list
+           ["srv"; "etc"; "var"; "sync-done"]
+           (in_tmpdir []);
          assert_equal_dir_list current_files (in_tmpdir ["srv"; "backup"])
        in
        let () = clean t in
@@ -387,6 +401,7 @@ let tests =
        in
        let () =
          (* Check result of clean. *)
+         assert_equal_dir_list ["srv"; "etc"; "var"] (in_tmpdir []);
          assert_equal_dir_list current_files (in_tmpdir ["srv"; "backup"])
        in
        let () = clean t in

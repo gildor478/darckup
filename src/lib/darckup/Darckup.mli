@@ -98,33 +98,52 @@ sig
   val npop: int -> t -> t * Archive.t list
 end
 
-type archive_set = {
-  (** Directory wher the archives are stored. *)
-  backup_dir: filename;
-
-  (** Configuration file for dar, for these archives. *)
-  darrc: filename;
-
-  (** A prefix with which the archive name will start. *)
-  base_prefix: string;
-
-  (** Maximal number of incremental archives (create). *)
-  max_incrementals: int;
-
-  (** Maximal number of archives (clean). *)
-  max_archives: int;
-
-  (** Command to run before create. *)
+(** Definition of hooks to run for clean/create commands.
+  *)
+type hooks = {
+  (** Command to run before create.
+    *)
   pre_create_command: string option;
 
-  (** Command to run after create. *)
+  (** Command to run after create.
+    *)
   post_create_command: string option;
 
-  (** Command to run before clean. *)
+  (** Command to run before clean.
+    *)
   pre_clean_command: string option;
 
-  (** Command to run after clean. *)
+  (** Command to run after clean.
+    *)
   post_clean_command: string option;
+}
+
+(** Definition of an archive_set, as defined in an INI file.
+  *)
+type archive_set = {
+  (** Directory wher the archives are stored.
+    *)
+  backup_dir: filename;
+
+  (** Configuration file for dar, for these archives.
+    *)
+  darrc: filename;
+
+  (** A prefix with which the archive name will start.
+    *)
+  base_prefix: string;
+
+  (** Maximal number of incremental archives (create).
+    *)
+  max_incrementals: int;
+
+  (** Maximal number of archives (clean).
+    *)
+  max_archives: int;
+
+  (** Hooks to run when handling this archive_set.
+    *)
+  archive_set_hooks: hooks;
 }
 
 (** Configuration for Darckup high level commands. *)
@@ -145,6 +164,10 @@ type t = {
       for archives.
     *)
   ignore_glob_files: string list;
+
+  (** Global hooks to run.
+    *)
+  global_hooks: hooks;
 
   (** All the available archives and the name of each.
     *)

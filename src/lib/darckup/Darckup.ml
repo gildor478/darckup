@@ -191,16 +191,30 @@ struct
         t, a :: l
 end
 
+
+type hooks = {
+  pre_create_command: string option;
+  post_create_command: string option;
+  pre_clean_command: string option;
+  post_clean_command: string option;
+}
+
+
+let default_hooks = {
+  pre_create_command = None;
+  post_create_command = None;
+  pre_clean_command = None;
+  post_clean_command = None;
+}
+
+
 type archive_set = {
   backup_dir: filename;
   darrc: filename;
   base_prefix: string;
   max_incrementals: int;
   max_archives: int;
-  pre_create_command: string option;
-  post_create_command: string option;
-  pre_clean_command: string option;
-  post_clean_command: string option;
+  archive_set_hooks: hooks
 }
 
 type outf = string -> unit
@@ -212,6 +226,7 @@ type t = {
   now_rfc3339: string;
   dry_run: bool;
   ignore_glob_files: string list;
+  global_hooks: hooks;
   archive_sets: (string * archive_set) list;
 
   (* System interface. *)
@@ -235,6 +250,7 @@ let default =
           Printer.Calendar.sprint "%FT%T%:z" (Calendar.now ())
       end;
     dry_run = false;
+    global_hooks = default_hooks;
     ignore_glob_files = [];
     archive_sets = [];
 
@@ -340,6 +356,16 @@ let load_one_configuration t fn =
     let open Re in compile (seq [str "archive_set:"; group (rep1 any); eol])
   in
 
+  let parse_hooks sect hks =
+    let get dflt fname = get ~default:dflt (opt identity) sect fname in
+      {
+        pre_create_command = get hks.pre_create_command "pre_create_command";
+        post_create_command = get hks.post_create_command "post_create_command";
+        pre_clean_command = get hks.pre_clean_command "pre_clean_command";
+        post_clean_command = get hks.post_clean_command "post_clean_command";
+      }
+  in
+
   let t =
     List.fold_left
       (fun t sect ->
@@ -347,6 +373,7 @@ let load_one_configuration t fn =
            {
              t with
                  dar = get ~default:t.dar identity sect "dar";
+                 global_hooks = parse_hooks sect t.global_hooks;
                  ignore_glob_files =
                    get
                      ~default:t.ignore_glob_files
@@ -363,42 +390,11 @@ let load_one_configuration t fn =
                  backup_dir = get directory_exists sect "backup_dir";
                  darrc = get file_exists sect "darrc";
                  base_prefix = get identity sect "base_prefix";
+                 archive_set_hooks = parse_hooks sect default_hooks;
                  max_incrementals =
-                   get
-                     ~default:6
-                     (integer_with_min 0)
-                     sect
-                     "max_incrementals";
+                   get ~default:6 (integer_with_min 0) sect "max_incrementals";
                  max_archives =
-                   get
-                     ~default:30
-                     (integer_with_min 0)
-                     sect
-                     "max_archives";
-                 pre_create_command =
-                   get
-                     ~default:None
-                     (opt identity)
-                     sect
-                     "pre_create_command";
-                 post_create_command =
-                   get
-                     ~default:None
-                     (opt identity)
-                     sect
-                     "post_create_command";
-                 pre_clean_command =
-                   get
-                     ~default:None
-                     (opt identity)
-                     sect
-                     "pre_clean_command";
-                 post_clean_command =
-                   get
-                     ~default:None
-                     (opt identity)
-                     sect
-                     "post_clean_command";
+                   get ~default:30 (integer_with_min 0) sect "max_archives";
                }
              in
                {t with archive_sets = (aname, aset) :: t.archive_sets}
@@ -540,33 +536,39 @@ let command_default t =
        dry_run = tdry_run}
 
 
-let run_hook t aname aset archv fname cmd_opt =
+let run_hook t ?in_archive fname cmd_opt =
+  let subst, id =
+    match in_archive with
+    | Some (aname, aset, archv) ->
+        ["current.last.prefix", Filename.quote (Archive.to_prefix archv)],
+        Printf.sprintf "archive_set:%s->%s" aname fname
+    | None ->
+        [],
+        Printf.sprintf "default->%s" fname
+  in
+
   match cmd_opt with
   | Some s ->
       begin
         let cmd =
           let b = Buffer.create (String.length s) in
             Buffer.add_substitute b
-              (function
-                 | "current.last.prefix" ->
-                     Filename.quote (Archive.to_prefix archv)
-                 | id ->
-                     failwith
-                       (Printf.sprintf
-                          "Unknown identifier %S in command %S."
-                          id s))
+              (fun var ->
+                 try
+                  List.assoc var subst
+                 with Not_found ->
+                   failwith
+                     (Printf.sprintf
+                        "Unknown variable %S in command %S for %s." var s id))
               s;
             Buffer.contents b
         in
           fun () ->
-            logf t `Info "Running command %S for archive_set:%s->%s."
-              cmd aname fname;
+            logf t `Info "Running command %S for %s." cmd id;
             t.command (command_default t) cmd
       end
   | None ->
-      fun () ->
-        logf t `Info "No command defined for archive_set:%s->%s."
-          aname fname
+      fun () -> logf t `Info "No command defined for %s." id
 
 
 let create t =
@@ -588,15 +590,24 @@ let create t =
                   [])
          in
            (aname, archv),
-           (run_hook t aname aset archv
-              "pre_create_command" aset.pre_create_command),
+           (run_hook t ~in_archive:(aname, aset, archv)
+              "pre_create_command"
+              aset.archive_set_hooks.pre_create_command),
            dar_args,
-           (run_hook t aname aset archv
-              "post_create_command" aset.post_create_command))
+           (run_hook t ~in_archive:(aname, aset, archv)
+              "post_create_command"
+              aset.archive_set_hooks.post_create_command))
       (load_archive_sets t)
+  in
+  let pre_cmd =
+    run_hook t "pre_create_command" t.global_hooks.pre_create_command
+  in
+  let post_cmd =
+    run_hook t "post_create_command" t.global_hooks.post_create_command
   in
 
   (* Invoke dar for each archive_set. *)
+  pre_cmd ();
   List.iter
     (fun ((aname, _), pre_cmd, dar_args, post_cmd) ->
        pre_cmd ();
@@ -605,6 +616,7 @@ let create t =
        t.exec (command_default t) t.dar dar_args;
        post_cmd ())
     lst;
+  post_cmd ();
 
   List.map (fun (fst, _, _, _) -> fst) lst
 
@@ -619,11 +631,11 @@ let clean t =
         List.map
           (fun archv ->
              aname,
-             run_hook t aname aset archv
-               "pre_clean_command" aset.pre_clean_command,
+             run_hook t ~in_archive:(aname, aset, archv)
+               "pre_clean_command" aset.archive_set_hooks.pre_clean_command,
              Archive.to_filenames archv,
-             run_hook t aname aset archv
-               "post_clean_command" aset.post_clean_command)
+             run_hook t ~in_archive:(aname, aset, archv)
+               "post_clean_command" aset.archive_set_hooks.post_clean_command)
           (snd (ArchiveSet.npop d archv_set))
       else
         []
@@ -631,6 +643,14 @@ let clean t =
   let lst =
     List.flatten (List.map clean_one_archive_set (load_archive_sets t))
   in
+  let pre_cmd =
+    run_hook t "pre_clean_command" t.global_hooks.pre_clean_command
+  in
+  let post_cmd =
+    run_hook t "post_clean_command" t.global_hooks.post_clean_command
+  in
+
+    pre_cmd ();
     List.iter
       (fun (aname, pre_cmd, fn_lst, post_cmd) ->
          pre_cmd ();
@@ -642,7 +662,8 @@ let clean t =
                 t.remove fn)
            fn_lst;
          post_cmd ())
-      lst
+      lst;
+    post_cmd ()
 
 
 type variable = string
