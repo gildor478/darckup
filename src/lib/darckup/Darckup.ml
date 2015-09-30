@@ -669,11 +669,7 @@ let clean t =
 type variable = string
 
 
-let getenv t ?current_archive_set variable =
-  failwith "Not implemented"
-
-
-let getenv_variables =
+let hook_variables =
   ["current.name", "name of archive_set currently processed.";
    "current.filenames", "list of all files for the current archive_set.";
    "current.last.prefix", "archive prefix of the last created archive.";

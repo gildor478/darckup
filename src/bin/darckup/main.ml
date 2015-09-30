@@ -40,7 +40,7 @@ let variables_secs =
      (fun lst (nm, help) ->
         `I ("$(b,"^nm^")", help) ::
         (if lst <> [] then `Noblank :: lst else []))
-     [] Darckup.getenv_variables)
+     [] Darckup.hook_variables)
 
 
 let copts_sect = "COMMON OPTIONS"
@@ -181,10 +181,6 @@ let cronjob copts asopts =
   | `Ok () -> clean copts asopts
   |  res -> res
 
-
-let getenv copts current_archive_set variable =
-  print_endline (Darckup.getenv (t copts) ?current_archive_set variable);
-  `Ok ()
 
 (*
  * Options common to all commands
@@ -365,35 +361,12 @@ let cronjob_cmd =
     Term.info "cronjob" ~sdocs:copts_sect ~doc ~man
 
 
-let getenv_cmd =
-  let doc = "Get data from darckup when running a hook." in
-  let variable =
-    let doc = "The variable to retrieve." in
-      Arg.(value & pos 0 string "" & info [] ~docv:"VARIABLE" ~doc)
-  in
-  let current_archive_set =
-    let doc = "Set current archive_set." in
-      Arg.(value & opt (some string) None
-             & info ["current_archive_set"] ~docv:"ARCHIVE_SET" ~doc)
-  in
-  let man =
-    [`S "DESCRIPTION";
-     `P "Retrieve data set in darckup from environment. This function should be
-         used within a hook."]
-    @ variables_secs
-    @ help_secs
-  in
-    Term.(ret (pure getenv $ copts_t $ current_archive_set $ variable)),
-    Term.info "getenv" ~sdocs:copts_sect ~doc ~man
-
-
 let cmds = [
   list_cmd;
   list_archive_cmd;
   create_cmd;
   clean_cmd;
   cronjob_cmd;
-  getenv_cmd;
   help_cmd;
 ]
 

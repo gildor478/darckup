@@ -209,10 +209,6 @@ val clean: t -> unit
   *)
 type variable = string
 
-(** Retrieve value from environment variable.
-  *)
-val getenv: t -> ?current_archive_set:string -> variable -> string
-
 (** List of available variables and a short help text.
   *)
-val getenv_variables: (variable * string) list
+val hook_variables: (variable * string) list
