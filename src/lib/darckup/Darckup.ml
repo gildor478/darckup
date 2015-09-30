@@ -386,18 +386,46 @@ let load_one_configuration t fn =
              let substr = Re.exec re_archive sect in
              let aname = Re.get substr 1 in
              let aset =
+               try
+                 List.assoc aname t.archive_sets
+               with Not_found ->
+                 {
+                   backup_dir = get directory_exists sect "backup_dir";
+                   darrc = get file_exists sect "darrc";
+                   base_prefix = get identity sect "base_prefix";
+                   archive_set_hooks = default_hooks;
+                   max_incrementals = 6;
+                   max_archives = 30;
+                 }
+             in
+             let aset =
                {
-                 backup_dir = get directory_exists sect "backup_dir";
-                 darrc = get file_exists sect "darrc";
-                 base_prefix = get identity sect "base_prefix";
-                 archive_set_hooks = parse_hooks sect default_hooks;
+                 backup_dir =
+                   get ~default:aset.backup_dir directory_exists
+                     sect "backup_dir";
+                 darrc =
+                   get ~default:aset.darrc file_exists
+                     sect "darrc";
+                 base_prefix =
+                   get ~default:aset.base_prefix identity
+                     sect "base_prefix";
+                 archive_set_hooks =
+                   parse_hooks sect aset.archive_set_hooks;
                  max_incrementals =
-                   get ~default:6 (integer_with_min 0) sect "max_incrementals";
+                   get ~default:aset.max_incrementals (integer_with_min 0)
+                     sect "max_incrementals";
                  max_archives =
-                   get ~default:30 (integer_with_min 0) sect "max_archives";
+                   get ~default:aset.max_archives (integer_with_min 0)
+                     sect "max_archives";
                }
              in
-               {t with archive_sets = (aname, aset) :: t.archive_sets}
+             let rec replace_append =
+               function
+                 | [] -> [aname, aset]
+                 | (aname', _) :: tl when aname' = aname -> (aname, aset) :: tl
+                 | e :: tl -> e :: replace_append tl
+             in
+               {t with archive_sets = replace_append t.archive_sets}
            with Not_found ->
              failwith
                (Printf.sprintf "Don't know what to do with section '%s'." sect)
@@ -405,7 +433,7 @@ let load_one_configuration t fn =
       )
       t ini#sects
   in
-    {t with archive_sets = List.rev t.archive_sets}
+    {t with archive_sets = t.archive_sets}
 
 
 let load_configuration t ?dir fn =

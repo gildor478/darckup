@@ -230,10 +230,14 @@ let tests =
             post_create_command=touch \\${current.last.prefix}.done
             post_clean_command=rm \\${current.last.prefix}.done
             base_prefix=foobar
-            max_incrementals=2
+            max_incrementals=1
             max_archives=3
            ";
-         write_file ["etc"; "darckup.ini.d"; "01barbaz.ini"]
+         write_file ["etc"; "darckup.ini.d"; "01foobar.ini"]
+           "[archive_set:foobar]
+            max_incrementals=2
+           ";
+         write_file ["etc"; "darckup.ini.d"; "02barbaz.ini"]
            "[archive_set:barbaz]
             backup_dir=${tmpdir}/srv/backup
             darrc=../barbaz.darrc
