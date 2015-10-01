@@ -103,317 +103,382 @@ let assert_bigger_size fn1 fn2 =
       (stat fn1).size (stat fn2).size
 
 
+let test_archive_set test_ctxt =
+  let files =
+      [
+        "foobar_20150831_full.1.dar";
+        "foobar_20150831_incr_1.1.dar";
+        "foobar_20150831_incr_2.1.dar";
+        "foobar_20150831_incr_3.1.dar";
+        "foobar_20150831_incr_4.1.dar";
+        "foobar_20150831_incr_4.2.dar";
+        "foobar_20150905_full.1.dar";
+        "foobar_20150905_incr1.1.dar";
+      ]
+  in
+  let set, bad =
+    (* of_filenames *)
+    ArchiveSet.of_filenames (List.rev files) in
+    StringListDiff.assert_equal [] bad;
+    StringListDiff.assert_equal files (ArchiveSet.to_filenames set);
+
+    (* length *)
+    assert_equal
+      ~msg:"ArchiveSet.length"
+      ~printer:string_of_int
+      7
+      (ArchiveSet.length set);
+
+    (* last *)
+    StringListDiff.assert_equal
+      ["foobar_20150905_incr1.1.dar"]
+      (Archive.to_filenames (ArchiveSet.last set));
+
+    (* pop *)
+    StringListDiff.assert_equal
+      ["foobar_20150831_incr_1.1.dar"]
+      (Archive.to_filenames (snd (ArchiveSet.pop set)));
+
+    (* npop *)
+    StringListDiff.assert_equal
+      [
+        "foobar_20150831_incr_1.1.dar";
+        "foobar_20150831_incr_2.1.dar";
+        "foobar_20150831_incr_3.1.dar";
+        "foobar_20150831_incr_4.1.dar";
+        "foobar_20150831_incr_4.2.dar";
+        "foobar_20150831_full.1.dar";
+        "foobar_20150905_incr1.1.dar";
+        "foobar_20150905_full.1.dar";
+      ]
+      (List.flatten
+         (List.map Archive.to_filenames
+            (snd (ArchiveSet.npop (ArchiveSet.length set) set))));
+
+    (* next *)
+    assert_equal
+      ~msg:"ArchiveSet.next"
+      ~printer:(fun s -> s)
+      "foobar_20150907_full"
+      (Archive.to_prefix (ArchiveSet.next set 1 "foobar_20150907"));
+    assert_equal
+      ~msg:"ArchiveSet.next"
+      ~printer:(fun s -> s)
+      "foobar_20150905_incr02"
+      (Archive.to_prefix (ArchiveSet.next set 2 "foobar_20150907"));
+    begin
+      try
+        let _t: Archive.t = ArchiveSet.next set 1 "foobar_20150904" in
+          assert_failure
+            "ArchiveSet.next create an archive that will not be the \
+             last one."
+      with Failure _ ->
+        ()
+    end;
+
+    ()
+
+
+let make_t test_ctxt =
+  {
+    default with
+        dar = dar_exec test_ctxt;
+        now_rfc3339 = "20150926";
+        log =
+          (fun lvl s ->
+             begin
+               match lvl with
+               | `Debug -> ()
+               | (`Info | `Warning | `Error) as lvl' ->
+                   logf test_ctxt lvl' "%s" s
+             end;
+             if lvl = `Error || lvl = `Warning then
+               failwith s);
+  }
+
+
+let setup_filesystem test_ctxt =
+  let tmpdir = bracket_tmpdir test_ctxt in
+  let in_tmpdir lst = FilePath.make_filename (tmpdir :: lst) in
+  let write_file lst cnt =
+    write_file test_ctxt ["tmpdir", tmpdir] (in_tmpdir lst) cnt
+  in
+    tmpdir, in_tmpdir, write_file
+
+
+let test_load_clean_create test_ctxt =
+  let t = make_t test_ctxt in
+  let tmpdir, in_tmpdir, write_file = setup_filesystem test_ctxt in
+  let open FileUtil in
+  let open FilePath in
+  let () =
+    (* Populate the filesystem. *)
+    mkdir ~parent:true (in_tmpdir ["var"; "foobar"]);
+    touch (in_tmpdir ["var"; "foobar"; "01.txt"]);
+    write_file ["var"; "foobar"; "02.txt"] (String.make 1512 'x');
+    mkdir ~parent:true (in_tmpdir ["var"; "barbaz"]);
+    touch (in_tmpdir ["var"; "barbaz"; "01.txt"]);
+    touch (in_tmpdir ["var"; "barbaz"; "02.txt"]);
+    mkdir ~parent:true (in_tmpdir ["srv"; "backup"]);
+    (* Create etc/darckup.ini. *)
+    write_file ["etc"; "darckup.ini"]
+      "[default]
+       ignore_glob_files=*.md5sums,*.done
+       post_create_command=touch \"${tmpdir}/sync-done\"
+       post_clean_command=rm -f \"${tmpdir}/sync-done\"
+      ";
+    write_file ["etc"; "darckup.ini.d"; "00foobar.ini"]
+      "[archive_set:foobar]
+       backup_dir=${tmpdir}/srv/backup
+       darrc=${tmpdir}/etc/foobar.darrc
+       post_create_command=touch \\${current.last.prefix}.done
+       post_clean_command=rm \\${current.last.prefix}.done
+       base_prefix=foobar
+       max_incrementals=1
+       max_archives=3
+      ";
+    write_file ["etc"; "darckup.ini.d"; "01foobar.ini"]
+      "[archive_set:foobar]
+       max_incrementals=2
+      ";
+    write_file ["etc"; "darckup.ini.d"; "02barbaz.ini"]
+      "[archive_set:barbaz]
+       backup_dir=${tmpdir}/srv/backup
+       darrc=../barbaz.darrc
+       base_prefix=barbaz
+       max_incrementals=1
+       max_archives=3
+      ";
+    (* Create etc/foobar.darrc. *)
+    write_file ["etc"; "foobar.darrc"]
+      "create:
+       -w
+       -D
+       -z
+       -aa
+       -ac
+       -g var/foobar
+       -R ${tmpdir}
+       all:
+       -Z *.Z
+       -Z *.bz2
+       -Z *.gz
+       -Z *.jpg
+       -Z *.mp3
+       -Z *.mpg
+       -Z *.tgz
+       -Z *.zip
+      ";
+    (* Create etc/barbaz.darrc. *)
+    write_file ["etc"; "barbaz.darrc"]
+      "create:
+       -w
+       -D
+       -z
+       -aa
+       -ac
+       -g var/barbaz
+       -R ${tmpdir}
+       all:
+       -Z *.Z
+       -Z *.bz2
+       -Z *.gz
+       -Z *.jpg
+       -Z *.mp3
+       -Z *.mpg
+       -Z *.tgz
+       -Z *.zip
+      "
+  in
+  let t =
+    load_configuration t
+      ~dir:(in_tmpdir ["etc"; "darckup.ini.d"])
+      (in_tmpdir ["etc"; "darckup.ini"])
+  in
+  let () =
+    (* Check result of loading INI file. *)
+    StringListDiff.assert_equal
+      ["*.md5sums"; "*.done"] t.ignore_glob_files;
+    StringListDiff.assert_equal
+      ["foobar"; "barbaz"] (List.map fst t.archive_sets);
+  in
+  let afoobar = List.assoc "foobar" t.archive_sets in
+  let () =
+    assert_equal ~printer:(function Some s -> s | None -> "none")
+      (Some ("touch \"" ^ tmpdir ^ "/sync-done\""))
+      t.global_hooks.post_create_command;
+    assert_equal ~printer:(function Some s -> s | None -> "none")
+      (Some "touch ${current.last.prefix}.done")
+      afoobar.archive_set_hooks.post_create_command;
+    assert_equal ~printer:(function Some s -> s | None -> "none")
+      (Some "rm ${current.last.prefix}.done")
+      afoobar.archive_set_hooks.post_clean_command;
+    assert_equal ~printer:(fun s -> s) "foobar" afoobar.base_prefix;
+    assert_equal ~printer:string_of_int 2 afoobar.max_incrementals;
+    assert_equal ~printer:string_of_int
+      3 (List.assoc "foobar" t.archive_sets).max_archives
+  in
+  let _ = create {t with dry_run = true} in
+  let _ = create t in
+  let () =
+    (* Check result of first run. *)
+    assert_equal_dir_list
+      ["foobar_20150926_full.1.dar";
+       "foobar_20150926_full.done";
+
+       "barbaz_20150926_full.1.dar"]
+      (in_tmpdir ["srv"; "backup"])
+  in
+  let t = {t with now_rfc3339 = "20150927"} in
+  let _lst = create {t with dry_run = true} in
+  let _lst = create t in
+  let () =
+    (* Check result of second run. *)
+    assert_equal_dir_list
+      ["srv"; "etc"; "var"; "sync-done"]
+      (in_tmpdir []);
+    assert_equal_dir_list
+      ["foobar_20150926_full.1.dar";
+       "foobar_20150926_full.done";
+       "foobar_20150926_incr01.1.dar";
+       "foobar_20150926_incr01.done";
+
+       "barbaz_20150926_full.1.dar";
+       "barbaz_20150926_incr01.1.dar"]
+      (in_tmpdir ["srv"; "backup"]);
+    assert_bigger_size
+      (in_tmpdir ["srv"; "backup"; "foobar_20150926_full.1.dar"])
+      (in_tmpdir ["srv"; "backup"; "foobar_20150926_incr01.1.dar"]);
+  in
+  (* Simulate a few days run. *)
+  let t = {t with now_rfc3339 = "20150928"} in
+  let _lst = create t in
+  let t = {t with now_rfc3339 = "20150929"} in
+  let _lst = create t in
+  let t = {t with now_rfc3339 = "20150930"} in
+  let _lst = create t in
+  let t = {t with now_rfc3339 = "20151001"} in
+  let _lst = create t in
+  let current_files =
+    ["foobar_20150926_full.1.dar";
+     "foobar_20150926_full.done";
+     "foobar_20150926_incr01.1.dar";
+     "foobar_20150926_incr01.done";
+     "foobar_20150926_incr02.1.dar";
+     "foobar_20150926_incr02.done";
+     "foobar_20150929_full.1.dar";
+     "foobar_20150929_full.done";
+     "foobar_20150929_incr01.1.dar";
+     "foobar_20150929_incr01.done";
+     "foobar_20150929_incr02.1.dar";
+     "foobar_20150929_incr02.done";
+
+     "barbaz_20150926_full.1.dar";
+     "barbaz_20150926_incr01.1.dar";
+     "barbaz_20150928_full.1.dar";
+     "barbaz_20150928_incr01.1.dar";
+     "barbaz_20150930_full.1.dar";
+     "barbaz_20150930_incr01.1.dar"]
+  in
+  let () =
+    (* Check result of second run. *)
+    assert_equal_dir_list
+      ["srv"; "etc"; "var"; "sync-done"]
+      (in_tmpdir []);
+    assert_equal_dir_list current_files (in_tmpdir ["srv"; "backup"]);
+  in
+  let () = clean {t with dry_run = true} in
+  let () =
+    (* Check no changes with dry_run. *)
+    assert_equal_dir_list
+      ["srv"; "etc"; "var"; "sync-done"]
+      (in_tmpdir []);
+    assert_equal_dir_list current_files (in_tmpdir ["srv"; "backup"])
+  in
+  let () = clean t in
+  let current_files =
+    ["foobar_20150929_full.1.dar";
+     "foobar_20150929_full.done";
+     "foobar_20150929_incr01.1.dar";
+     "foobar_20150929_incr01.done";
+     "foobar_20150929_incr02.1.dar";
+     "foobar_20150929_incr02.done";
+     "barbaz_20150928_full.1.dar";
+     "barbaz_20150930_full.1.dar";
+     "barbaz_20150930_incr01.1.dar"]
+  in
+  let () =
+    (* Check result of clean. *)
+    assert_equal_dir_list ["srv"; "etc"; "var"] (in_tmpdir []);
+    assert_equal_dir_list current_files (in_tmpdir ["srv"; "backup"])
+  in
+  let () = clean t in
+  let () =
+    (* Check result of 2nd clean. *)
+    assert_equal_dir_list current_files (in_tmpdir ["srv"; "backup"])
+  in
+    ()
+
+
+let test_executable test_ctxt =
+  let tmpdir, in_tmpdir, write_file = setup_filesystem test_ctxt in
+  let open FileUtil in
+  let open FilePath in
+  let darckup cmd now_rfc3339 args =
+    assert_command ~ctxt:test_ctxt (darckup_exec test_ctxt)
+      ([cmd; "--verbose";
+        "--ini"; in_tmpdir ["etc"; "darckup.ini"];
+        "--now_rfc3339"; now_rfc3339] @ args)
+  in
+    (* Populate the filesystem. *)
+    mkdir ~parent:true (in_tmpdir ["var"; "foobar"]);
+    touch (in_tmpdir ["var"; "foobar"; "01.txt"]);
+    write_file ["var"; "foobar"; "02.txt"] (String.make 1512 'x');
+    mkdir ~parent:true (in_tmpdir ["srv"; "backup"]);
+    (* Create etc/darckup.ini. *)
+    write_file ["etc"; "darckup.ini"]
+      "[default]
+       ignore_glob_files=*.md5sums,*.done
+       post_create_command=touch \"${tmpdir}/sync-done\"
+       post_clean_command=rm -f \"${tmpdir}/sync-done\"
+       [archive_set:foobar]
+       backup_dir=${tmpdir}/srv/backup
+       darrc=${tmpdir}/etc/foobar.darrc
+       base_prefix=foobar
+       max_incrementals=1
+       max_archives=3
+      ";
+    (* Create etc/foobar.darrc. *)
+    write_file ["etc"; "foobar.darrc"]
+      "create:
+       -w
+       -D
+       -z
+       -aa
+       -ac
+       -g var/foobar
+       -R ${tmpdir}
+       all:
+       -Z *.bz2
+       -Z *.zip
+      ";
+    darckup "create" "20150929" ["--all_archive_sets"];
+    darckup "clean" "20150929" ["--all_archive_sets"];
+    darckup "cronjob" "20150930" ["--all_archive_sets"];
+    darckup "cronjob" "20151001" ["--all_archive_sets"];
+    darckup "cronjob" "20151002" ["--all_archive_sets"];
+    assert_equal_dir_list
+      ["foobar_20150929_full.1.dar";
+       "foobar_20151001_full.1.dar";
+       "foobar_20151001_incr01.1.dar"]
+      (in_tmpdir ["srv"; "backup"]);
+    ()
+
 let tests =
   [
-    "ArchiveSet" >::
-    (fun test_ctxt ->
-       let files =
-           [
-             "foobar_20150831_full.1.dar";
-             "foobar_20150831_incr_1.1.dar";
-             "foobar_20150831_incr_2.1.dar";
-             "foobar_20150831_incr_3.1.dar";
-             "foobar_20150831_incr_4.1.dar";
-             "foobar_20150831_incr_4.2.dar";
-             "foobar_20150905_full.1.dar";
-             "foobar_20150905_incr1.1.dar";
-           ]
-       in
-       let set, bad =
-         (* of_filenames *)
-         ArchiveSet.of_filenames (List.rev files) in
-         StringListDiff.assert_equal [] bad;
-         StringListDiff.assert_equal files (ArchiveSet.to_filenames set);
-
-         (* length *)
-         assert_equal
-           ~msg:"ArchiveSet.length"
-           ~printer:string_of_int
-           7
-           (ArchiveSet.length set);
-
-         (* last *)
-         StringListDiff.assert_equal
-           ["foobar_20150905_incr1.1.dar"]
-           (Archive.to_filenames (ArchiveSet.last set));
-
-         (* pop *)
-         StringListDiff.assert_equal
-           ["foobar_20150831_incr_1.1.dar"]
-           (Archive.to_filenames (snd (ArchiveSet.pop set)));
-
-         (* npop *)
-         StringListDiff.assert_equal
-           [
-             "foobar_20150831_incr_1.1.dar";
-             "foobar_20150831_incr_2.1.dar";
-             "foobar_20150831_incr_3.1.dar";
-             "foobar_20150831_incr_4.1.dar";
-             "foobar_20150831_incr_4.2.dar";
-             "foobar_20150831_full.1.dar";
-             "foobar_20150905_incr1.1.dar";
-             "foobar_20150905_full.1.dar";
-           ]
-           (List.flatten
-              (List.map Archive.to_filenames
-                 (snd (ArchiveSet.npop (ArchiveSet.length set) set))));
-
-         (* next *)
-         assert_equal
-           ~msg:"ArchiveSet.next"
-           ~printer:(fun s -> s)
-           "foobar_20150907_full"
-           (Archive.to_prefix (ArchiveSet.next set 1 "foobar_20150907"));
-         assert_equal
-           ~msg:"ArchiveSet.next"
-           ~printer:(fun s -> s)
-           "foobar_20150905_incr02"
-           (Archive.to_prefix (ArchiveSet.next set 2 "foobar_20150907"));
-         begin
-           try
-             let _t: Archive.t = ArchiveSet.next set 1 "foobar_20150904" in
-               assert_failure
-                 "ArchiveSet.next create an archive that will not be the \
-                  last one."
-           with Failure _ ->
-             ()
-         end;
-
-         ()
-    );
-
-    "load+clean+create" >::
-    (fun test_ctxt ->
-       let t =
-         {
-           default with
-               now_rfc3339 = "20150926";
-               log =
-                 (fun lvl s ->
-                    begin
-                      match lvl with
-                      | `Debug -> ()
-                      | (`Info | `Warning | `Error) as lvl' ->
-                          logf test_ctxt lvl' "%s" s
-                    end;
-                    if lvl = `Error || lvl = `Warning then
-                      failwith s);
-         }
-       in
-       let tmpdir = bracket_tmpdir test_ctxt in
-       let in_tmpdir lst = FilePath.make_filename (tmpdir :: lst) in
-       let write_file lst cnt =
-         write_file test_ctxt ["tmpdir", tmpdir] (in_tmpdir lst) cnt
-       in
-       let open FileUtil in
-       let open FilePath in
-       let () =
-         (* Populate the filesystem. *)
-         mkdir ~parent:true (in_tmpdir ["var"; "foobar"]);
-         touch (in_tmpdir ["var"; "foobar"; "01.txt"]);
-         write_file ["var"; "foobar"; "02.txt"] (String.make 1512 'x');
-         mkdir ~parent:true (in_tmpdir ["var"; "barbaz"]);
-         touch (in_tmpdir ["var"; "barbaz"; "01.txt"]);
-         touch (in_tmpdir ["var"; "barbaz"; "02.txt"]);
-         mkdir ~parent:true (in_tmpdir ["srv"; "backup"]);
-         (* Create etc/darckup.ini. *)
-         write_file ["etc"; "darckup.ini"]
-           "[default]
-            ignore_glob_files=*.md5sums,*.done
-            post_create_command=touch \"${tmpdir}/sync-done\"
-            post_clean_command=rm -f \"${tmpdir}/sync-done\"
-           ";
-         write_file ["etc"; "darckup.ini.d"; "00foobar.ini"]
-           "[archive_set:foobar]
-            backup_dir=${tmpdir}/srv/backup
-            darrc=${tmpdir}/etc/foobar.darrc
-            post_create_command=touch \\${current.last.prefix}.done
-            post_clean_command=rm \\${current.last.prefix}.done
-            base_prefix=foobar
-            max_incrementals=1
-            max_archives=3
-           ";
-         write_file ["etc"; "darckup.ini.d"; "01foobar.ini"]
-           "[archive_set:foobar]
-            max_incrementals=2
-           ";
-         write_file ["etc"; "darckup.ini.d"; "02barbaz.ini"]
-           "[archive_set:barbaz]
-            backup_dir=${tmpdir}/srv/backup
-            darrc=../barbaz.darrc
-            base_prefix=barbaz
-            max_incrementals=1
-            max_archives=3
-           ";
-         (* Create etc/foobar.darrc. *)
-         write_file ["etc"; "foobar.darrc"]
-           "create:
-            -w
-            -D
-            -z
-            -aa
-            -ac
-            -g var/foobar
-            -R ${tmpdir}
-            all:
-            -Z *.Z
-            -Z *.bz2
-            -Z *.gz
-            -Z *.jpg
-            -Z *.mp3
-            -Z *.mpg
-            -Z *.tgz
-            -Z *.zip
-           ";
-         (* Create etc/barbaz.darrc. *)
-         write_file ["etc"; "barbaz.darrc"]
-           "create:
-            -w
-            -D
-            -z
-            -aa
-            -ac
-            -g var/barbaz
-            -R ${tmpdir}
-            all:
-            -Z *.Z
-            -Z *.bz2
-            -Z *.gz
-            -Z *.jpg
-            -Z *.mp3
-            -Z *.mpg
-            -Z *.tgz
-            -Z *.zip
-           "
-       in
-       let t =
-         load_configuration t
-           ~dir:(in_tmpdir ["etc"; "darckup.ini.d"])
-           (in_tmpdir ["etc"; "darckup.ini"])
-       in
-       let () =
-         (* Check result of loading INI file. *)
-         StringListDiff.assert_equal
-           ["*.md5sums"; "*.done"] t.ignore_glob_files;
-         StringListDiff.assert_equal
-           ["foobar"; "barbaz"] (List.map fst t.archive_sets);
-       in
-       let afoobar = List.assoc "foobar" t.archive_sets in
-       let () =
-         assert_equal ~printer:(function Some s -> s | None -> "none")
-           (Some ("touch \"" ^ tmpdir ^ "/sync-done\""))
-           t.global_hooks.post_create_command;
-         assert_equal ~printer:(function Some s -> s | None -> "none")
-           (Some "touch ${current.last.prefix}.done")
-           afoobar.archive_set_hooks.post_create_command;
-         assert_equal ~printer:(function Some s -> s | None -> "none")
-           (Some "rm ${current.last.prefix}.done")
-           afoobar.archive_set_hooks.post_clean_command;
-         assert_equal ~printer:(fun s -> s) "foobar" afoobar.base_prefix;
-         assert_equal ~printer:string_of_int 2 afoobar.max_incrementals;
-         assert_equal ~printer:string_of_int
-           3 (List.assoc "foobar" t.archive_sets).max_archives
-       in
-       let _ = create {t with dry_run = true} in
-       let _ = create t in
-       let () =
-         (* Check result of first run. *)
-         assert_equal_dir_list
-           ["foobar_20150926_full.1.dar";
-            "foobar_20150926_full.done";
-
-            "barbaz_20150926_full.1.dar"]
-           (in_tmpdir ["srv"; "backup"])
-       in
-       let t = {t with now_rfc3339 = "20150927"} in
-       let _lst = create {t with dry_run = true} in
-       let _lst = create t in
-       let () =
-         (* Check result of second run. *)
-         assert_equal_dir_list
-           ["srv"; "etc"; "var"; "sync-done"]
-           (in_tmpdir []);
-         assert_equal_dir_list
-           ["foobar_20150926_full.1.dar";
-            "foobar_20150926_full.done";
-            "foobar_20150926_incr01.1.dar";
-            "foobar_20150926_incr01.done";
-
-            "barbaz_20150926_full.1.dar";
-            "barbaz_20150926_incr01.1.dar"]
-           (in_tmpdir ["srv"; "backup"]);
-         assert_bigger_size
-           (in_tmpdir ["srv"; "backup"; "foobar_20150926_full.1.dar"])
-           (in_tmpdir ["srv"; "backup"; "foobar_20150926_incr01.1.dar"]);
-       in
-       (* Simulate a few days run. *)
-       let t = {t with now_rfc3339 = "20150928"} in
-       let _lst = create t in
-       let t = {t with now_rfc3339 = "20150929"} in
-       let _lst = create t in
-       let t = {t with now_rfc3339 = "20150930"} in
-       let _lst = create t in
-       let t = {t with now_rfc3339 = "20151001"} in
-       let _lst = create t in
-       let current_files =
-         ["foobar_20150926_full.1.dar";
-          "foobar_20150926_full.done";
-          "foobar_20150926_incr01.1.dar";
-          "foobar_20150926_incr01.done";
-          "foobar_20150926_incr02.1.dar";
-          "foobar_20150926_incr02.done";
-          "foobar_20150929_full.1.dar";
-          "foobar_20150929_full.done";
-          "foobar_20150929_incr01.1.dar";
-          "foobar_20150929_incr01.done";
-          "foobar_20150929_incr02.1.dar";
-          "foobar_20150929_incr02.done";
-
-          "barbaz_20150926_full.1.dar";
-          "barbaz_20150926_incr01.1.dar";
-          "barbaz_20150928_full.1.dar";
-          "barbaz_20150928_incr01.1.dar";
-          "barbaz_20150930_full.1.dar";
-          "barbaz_20150930_incr01.1.dar"]
-       in
-       let () =
-         (* Check result of second run. *)
-         assert_equal_dir_list
-           ["srv"; "etc"; "var"; "sync-done"]
-           (in_tmpdir []);
-         assert_equal_dir_list current_files (in_tmpdir ["srv"; "backup"]);
-       in
-       let () = clean {t with dry_run = true} in
-       let () =
-         (* Check no changes with dry_run. *)
-         assert_equal_dir_list
-           ["srv"; "etc"; "var"; "sync-done"]
-           (in_tmpdir []);
-         assert_equal_dir_list current_files (in_tmpdir ["srv"; "backup"])
-       in
-       let () = clean t in
-       let current_files =
-         ["foobar_20150929_full.1.dar";
-          "foobar_20150929_full.done";
-          "foobar_20150929_incr01.1.dar";
-          "foobar_20150929_incr01.done";
-          "foobar_20150929_incr02.1.dar";
-          "foobar_20150929_incr02.done";
-          "barbaz_20150928_full.1.dar";
-          "barbaz_20150930_full.1.dar";
-          "barbaz_20150930_incr01.1.dar"]
-       in
-       let () =
-         (* Check result of clean. *)
-         assert_equal_dir_list ["srv"; "etc"; "var"] (in_tmpdir []);
-         assert_equal_dir_list current_files (in_tmpdir ["srv"; "backup"])
-       in
-       let () = clean t in
-       let () =
-         (* Check result of 2nd clean. *)
-         assert_equal_dir_list current_files (in_tmpdir ["srv"; "backup"])
-       in
-         ());
+    "ArchiveSet" >:: test_archive_set;
+    "load+clean+create" >:: test_load_clean_create;
+    "Executable" >:: test_executable;
   ]
 
 

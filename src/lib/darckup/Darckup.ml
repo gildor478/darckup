@@ -269,6 +269,7 @@ let logf t lvl fmt = Printf.ksprintf (t.log lvl) fmt
 
 
 let load_one_configuration t fn =
+  let () = logf t `Info "Loading configuration file %s." fn in
   let ini =
     try
       new Inifiles.inifile fn
@@ -435,7 +436,6 @@ let load_one_configuration t fn =
   in
     {t with archive_sets = t.archive_sets}
 
-
 let load_configuration t ?dir fn =
   let lst =
     fn ::
@@ -452,6 +452,7 @@ let load_configuration t ?dir fn =
             arr []
     | _ -> []
   in
+  let t =
     List.fold_left
       (fun t fn ->
          if t.file_exists fn then
@@ -459,6 +460,12 @@ let load_configuration t ?dir fn =
          else
            t)
       t lst
+  in
+    logf t `Info "Hello!";
+    List.iter
+      (fun (aname, _) -> logf t `Info "archive_set found: %s" aname)
+      t.archive_sets;
+    t
 
 
 let load_archive_sets t =

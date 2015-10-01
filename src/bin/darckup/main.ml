@@ -131,7 +131,15 @@ let t ?(asopts=fun _ -> true) copts =
           dar = if_opt t.dar copts.cdar;
           dry_run = copts.cdry_run;
           now_rfc3339 = if_opt t.now_rfc3339 copts.cnow_rfc3339;
-          log = (fun lvl s -> if copts.logging_filter lvl then t.log lvl s);
+          log = (fun lvl s ->
+                   if copts.logging_filter lvl then
+                     Printf.eprintf "%c: %s\n"
+                       (List.assoc lvl
+                          [`Debug, 'D';
+                           `Info, 'I';
+                           `Warning, 'W';
+                           `Error, 'E'])
+                       s);
     }
 
 
@@ -357,7 +365,7 @@ let cronjob_cmd =
      `P "Invoke $(b,create) and $(b,clean) for the selected archive_sets."]
     @ help_secs
   in
-    Term.(ret (pure (fun _ _ -> `Ok ()) $ copts_t $ asopts_t)),
+    Term.(ret (pure cronjob $ copts_t $ asopts_t)),
     Term.info "cronjob" ~sdocs:copts_sect ~doc ~man
 
 
