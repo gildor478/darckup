@@ -91,10 +91,10 @@ let help copts man_format cmds topic =
                     archive_set."); `Noblank;
                `I ("$(b,archive_set.pre_clean_command)",
                    "Command to run before $(b,clean) for the given
-                    archive_set."); `Noblank;
+                    archive_set. Run for every archive to remove."); `Noblank;
                `I ("$(b,archive_set.post_clean_command)",
                    "Command to run after $(b,clean) for the given
-                    archive_set.");
+                    archive_set. Run for every archive to remove.");
 
                `S "DATA RETRIEVAL";
                `P "It is possible to extract data about the current context of
