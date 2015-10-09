@@ -24,6 +24,15 @@ module IntMap =
        let compare = (-)
      end)
 
+
+module StringMap =
+  Map.Make
+    (struct
+       type t = string
+       let compare = String.compare
+     end)
+
+
 type filename = string
 type volumes = filename IntMap.t
 
@@ -112,6 +121,9 @@ struct
     let open Archive in
     let k = to_prefix a in
       M.add k (try merge (M.find k t) a with Not_found -> a) t
+
+  let remove a t =
+    t (* TODO *)
 
   let of_filenames =
     List.fold_left
@@ -220,6 +232,7 @@ type archive_set = {
 type outf = string -> unit
 type errf = string -> unit
 type env = string array
+
 
 type t = {
   dar: filename;
@@ -436,6 +449,7 @@ let load_one_configuration t fn =
   in
     {t with archive_sets = t.archive_sets}
 
+
 let load_configuration t ?dir fn =
   let lst =
     fn ::
@@ -469,25 +483,17 @@ let load_configuration t ?dir fn =
 
 
 let load_archive_sets t =
-  let module MapString =
-    Map.Make
-      (struct
-         type t = filename
-         let compare = String.compare
-       end)
-  in
-
   (* Cons the value v to the list, using [v] if not yet set. *)
   let cons s v mp =
-    let l = try MapString.find s mp with Not_found -> [] in
-      MapString.add s (v :: l) mp
+    let l = try StringMap.find s mp with Not_found -> [] in
+      StringMap.add s (v :: l) mp
   in
 
   (* Group archive per backup_dir. *)
   let group_backup_dir =
     List.fold_left
       (fun mp ((_, {backup_dir = dn}) as e) -> cons dn e mp)
-      MapString.empty t.archive_sets
+      StringMap.empty t.archive_sets
   in
 
   let is_ignored =
@@ -548,17 +554,17 @@ let load_archive_sets t =
                (fun fn ->
                  logf t `Warning "File %S doesn't match archive %S." fn aname)
                lst;
-              i + 1, MapString.add aname archv map_names)
+              i + 1, StringMap.add aname archv map_names)
         (0, map_names) archive_sets
     in
       map_names
   in
 
   let map_names =
-    MapString.fold process_backup_dir group_backup_dir MapString.empty
+    StringMap.fold process_backup_dir group_backup_dir StringMap.empty
   in
     List.map
-      (fun (aname, aset) -> aname, aset, MapString.find aname map_names)
+      (fun (aname, aset) -> aname, aset, StringMap.find aname map_names)
       t.archive_sets
 
 
@@ -571,15 +577,73 @@ let command_default t =
        dry_run = tdry_run}
 
 
-let run_hook t ?in_archive fname cmd_opt =
-  let subst, id =
-    match in_archive with
-    | Some (aname, aset, archv) ->
-        ["current.last.prefix", Filename.quote (Archive.to_prefix archv)],
+type variable = string
+let variables =
+  [
+    "current.archive_set.name",
+    `CurrentArchiveSet
+      (fun _ aname _ _ -> aname),
+    "name of archive_set currently processed.";
+
+    "current.archive.prefix",
+    `CurrentArchive
+      (fun _ archv -> Archive.to_prefix archv),
+    "archive prefix of the archive currently processed.";
+
+    "all_archive_sets",
+    `All (fun t -> (*TODO *) ""),
+    "all available archive_sets.";
+  ]
+
+
+let hook_variables =
+  List.map (fun (var, _, help) -> (var, help)) variables
+
+
+let map_variables =
+  List.fold_left
+    (fun mp (nm, f, _) ->
+       if StringMap.mem nm mp then
+         failwith
+           (Printf.sprintf "Darckup variable %s is already defined." nm);
+       StringMap.add nm f mp)
+    StringMap.empty variables
+
+
+let run_hook t ?with_archive_set ?with_archive fname cmd_opt =
+  let id =
+    match with_archive_set with
+    | Some (aname, aset, _) ->
         Printf.sprintf "archive_set:%s->%s" aname fname
     | None ->
-        [],
         Printf.sprintf "default->%s" fname
+  in
+
+  let subst t cmd var =
+    let f =
+      try
+        StringMap.find var map_variables
+      with Not_found ->
+        failwith
+          (Printf.sprintf
+             "Unknown variable %s in command %S for %s." var cmd id)
+    in
+    let na () =
+      failwith
+        (Printf.sprintf
+           "Variable %s is not available in command %S for %s." var cmd id)
+    in
+       match f, with_archive_set, with_archive with
+       | `CurrentArchiveSet f, Some (aname, aset, archv_set), _ ->
+           f t aname aset archv_set
+       | `CurrentArchiveSet _, None, _ ->
+           na ()
+       | `CurrentArchive f, _, Some archv ->
+           f t archv
+       | `CurrentArchive f, _, None ->
+           na ()
+       | `All f, _, _ ->
+           f t
   in
 
   match cmd_opt with
@@ -587,19 +651,12 @@ let run_hook t ?in_archive fname cmd_opt =
       begin
         let cmd =
           let b = Buffer.create (String.length s) in
-            Buffer.add_substitute b
-              (fun var ->
-                 try
-                  List.assoc var subst
-                 with Not_found ->
-                   failwith
-                     (Printf.sprintf
-                        "Unknown variable %S in command %S for %s." var s id))
-              s;
+            Buffer.add_substitute b (subst t s) s;
             Buffer.contents b
         in
           fun () ->
-            logf t `Info "Running command %S for %s." cmd id;
+            logf t `Info "Running command %S for %s (dry_run: %b)."
+              cmd id t.dry_run;
             t.command (command_default t) cmd
       end
   | None ->
@@ -624,14 +681,22 @@ let create t =
                 else
                   [])
          in
-           (aname, archv),
-           (run_hook t ~in_archive:(aname, aset, archv)
-              "pre_create_command"
-              aset.archive_set_hooks.pre_create_command),
-           dar_args,
-           (run_hook t ~in_archive:(aname, aset, archv)
-              "post_create_command"
-              aset.archive_set_hooks.post_create_command))
+         let pre_create_command  =
+           run_hook t
+             ~with_archive_set:(aname, aset, archv_set)
+             ~with_archive:archv
+             "pre_create_command"
+             aset.archive_set_hooks.pre_create_command
+         in
+         let archv_set = ArchiveSet.add archv archv_set in
+         let post_create_command =
+           run_hook t
+             ~with_archive_set:(aname, aset, archv_set)
+             ~with_archive:archv
+             "post_create_command"
+             aset.archive_set_hooks.post_create_command
+         in
+           (aname, archv), pre_create_command, dar_args, post_create_command)
       (load_archive_sets t)
   in
   let pre_cmd =
@@ -662,18 +727,35 @@ let clean t =
       logf t `Info
         "Cleaning archive_set:%s: %d archives present, will remove %d of them."
         aname (ArchiveSet.length archv_set) d;
-      if d > 0 then
-        List.map
-          (fun archv ->
-             aname,
-             run_hook t ~in_archive:(aname, aset, archv)
-               "pre_clean_command" aset.archive_set_hooks.pre_clean_command,
-             Archive.to_filenames archv,
-             run_hook t ~in_archive:(aname, aset, archv)
-               "post_clean_command" aset.archive_set_hooks.post_clean_command)
-          (snd (ArchiveSet.npop d archv_set))
-      else
+      if d > 0 then begin
+        let _, lst =
+          List.fold_left
+            (fun (archv_set, lst) archv ->
+               let pre_clean_command =
+                 run_hook t
+                   ~with_archive_set:(aname, aset, archv_set)
+                   ~with_archive:archv
+                   "pre_clean_command"
+                   aset.archive_set_hooks.pre_clean_command
+               in
+               let archv_set = ArchiveSet.remove archv archv_set in
+               let post_clean_command =
+                 run_hook t
+                   ~with_archive_set:(aname, aset, archv_set)
+                   ~with_archive:archv
+                   "post_clean_command"
+                   aset.archive_set_hooks.post_clean_command
+               in
+               let filenames = Archive.to_filenames archv in
+                 archv_set,
+                 (aname, pre_clean_command, filenames,
+                  post_clean_command) :: lst)
+            (archv_set, []) (snd (ArchiveSet.npop d archv_set))
+        in
+          lst
+      end else begin
         []
+      end
   in
   let lst =
     List.flatten (List.map clean_one_archive_set (load_archive_sets t))
@@ -699,14 +781,3 @@ let clean t =
          post_cmd ())
       lst;
     post_cmd ()
-
-
-type variable = string
-
-
-let hook_variables =
-  ["current.name", "name of archive_set currently processed.";
-   "current.filenames", "list of all files for the current archive_set.";
-   "current.last.prefix", "archive prefix of the last created archive.";
-   "all_archive_sets",  "all available archive_sets."]
-

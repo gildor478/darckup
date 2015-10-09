@@ -231,8 +231,8 @@ let test_load_clean_create test_ctxt =
       "[archive_set:foobar]
        backup_dir=${tmpdir}/srv/backup
        darrc=${tmpdir}/etc/foobar.darrc
-       post_create_command=touch \\${current.last.prefix}.done
-       post_clean_command=rm \\${current.last.prefix}.done
+       post_create_command=touch \\${current.archive.prefix}.done
+       pre_clean_command=rm \\${current.archive.prefix}.done
        base_prefix=foobar
        max_incrementals=1
        max_archives=3
@@ -308,11 +308,11 @@ let test_load_clean_create test_ctxt =
       (Some ("touch \"" ^ tmpdir ^ "/sync-done\""))
       t.global_hooks.post_create_command;
     assert_equal ~printer:(function Some s -> s | None -> "none")
-      (Some "touch ${current.last.prefix}.done")
+      (Some "touch ${current.archive.prefix}.done")
       afoobar.archive_set_hooks.post_create_command;
     assert_equal ~printer:(function Some s -> s | None -> "none")
-      (Some "rm ${current.last.prefix}.done")
-      afoobar.archive_set_hooks.post_clean_command;
+      (Some "rm ${current.archive.prefix}.done")
+      afoobar.archive_set_hooks.pre_clean_command;
     assert_equal ~printer:(fun s -> s) "foobar" afoobar.base_prefix;
     assert_equal ~printer:string_of_int 2 afoobar.max_incrementals;
     assert_equal ~printer:string_of_int
@@ -473,6 +473,7 @@ let test_executable test_ctxt =
        "foobar_20151001_incr01.1.dar"]
       (in_tmpdir ["srv"; "backup"]);
     ()
+
 
 let tests =
   [
