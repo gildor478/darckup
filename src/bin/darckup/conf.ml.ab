@@ -19,5 +19,8 @@
 
 
 let version = "$(pkg_version)"
-let ini = Filename.concat "$(sysconfdir)" "$(pkg_name).ini"
+let ini =
+  Filename.concat
+    "$(sysconfdir)"
+    (Filename.concat "$(pkg_name)" "$(pkg_name).ini")
 let ini_d = ini ^ ".d"
