@@ -723,7 +723,7 @@ let create t =
 
 let clean t =
   let clean_one_archive_set (aname, aset, archv_set) =
-    let d = ArchiveSet.length archv_set - aset.max_archives in
+    let d = max 0 (ArchiveSet.length archv_set - aset.max_archives) in
       logf t `Info
         "Cleaning archive_set:%s: %d archives present, will remove %d of them."
         aname (ArchiveSet.length archv_set) d;
