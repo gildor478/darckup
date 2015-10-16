@@ -90,9 +90,9 @@ let write_file test_ctxt binding fn cnt =
 
 
 let assert_equal_dir_list lst dn =
-        StringSetDiff.assert_equal
-          (StringSetDiff.of_list lst)
-          (StringSetDiff.of_list (Array.to_list (Sys.readdir dn)))
+  StringSetDiff.assert_equal
+    (StringSetDiff.of_list lst)
+    (StringSetDiff.of_list (Array.to_list (Sys.readdir dn)))
 
 
 let assert_bigger_size fn1 fn2 =
@@ -115,6 +115,17 @@ let test_archive_set test_ctxt =
         "foobar_20150905_full.1.dar";
         "foobar_20150905_incr1.1.dar";
       ]
+  in
+  let assert_equal_next exp (got_archv, got_opt_ref_archv) =
+    assert_equal
+      ~msg:"ArchiveSet.next"
+      ~printer:(fun (s, os) ->
+                  s^", "^match os with None -> "<none>" | Some s -> s)
+      exp
+      (Archive.to_prefix got_archv,
+       match got_opt_ref_archv with
+       | None -> None
+       | Some archv -> Some (Archive.to_prefix archv))
   in
   let set, bad =
     (* of_filenames *)
@@ -156,19 +167,15 @@ let test_archive_set test_ctxt =
             (snd (ArchiveSet.npop (ArchiveSet.length set) set))));
 
     (* next *)
-    assert_equal
-      ~msg:"ArchiveSet.next"
-      ~printer:(fun s -> s)
-      "foobar_20150907_full"
-      (Archive.to_prefix (ArchiveSet.next set 1 "foobar_20150907"));
-    assert_equal
-      ~msg:"ArchiveSet.next"
-      ~printer:(fun s -> s)
-      "foobar_20150905_incr02"
-      (Archive.to_prefix (ArchiveSet.next set 2 "foobar_20150907"));
+    assert_equal_next
+      ("foobar_20150907_full", None)
+      (ArchiveSet.next set 1 "foobar_20150907");
+    assert_equal_next
+      ("foobar_20150905_incr02", Some "foobar_20150905_full")
+      (ArchiveSet.next set 2 "foobar_20150907");
     begin
       try
-        let _t: Archive.t = ArchiveSet.next set 1 "foobar_20150904" in
+        let _, _ = ArchiveSet.next set 1 "foobar_20150904" in
           assert_failure
             "ArchiveSet.next create an archive that will not be the \
              last one."
@@ -475,11 +482,70 @@ let test_executable test_ctxt =
     ()
 
 
+let test_catalog test_ctxt =
+  let tmpdir, in_tmpdir, write_file = setup_filesystem test_ctxt in
+  let open FileUtil in
+  let open FilePath in
+  let () =
+    (* Populate the filesystem. *)
+    mkdir ~parent:true (in_tmpdir ["var"; "foobar"]);
+    touch (in_tmpdir ["var"; "foobar"; "01.txt"]);
+    write_file ["var"; "foobar"; "02.txt"] (String.make 1512 'x');
+    mkdir ~parent:true (in_tmpdir ["srv"; "backup"]);
+    (* Create etc/darckup.ini. *)
+    write_file ["etc"; "darckup.ini"]
+      "[default]
+       ignore_glob_files=*.md5sums,*.done
+       post_create_command=touch \"${tmpdir}/sync-done\"
+       post_clean_command=rm -f \"${tmpdir}/sync-done\"
+       [archive_set:foobar]
+       backup_dir=${tmpdir}/srv/backup
+       darrc=${tmpdir}/etc/foobar.darrc
+       base_prefix=foobar
+       max_incrementals=1
+       max_archives=3
+       create_catalog=true
+      ";
+    (* Create etc/foobar.darrc. *)
+    write_file ["etc"; "foobar.darrc"]
+      "create:
+       -w
+       -D
+       -z
+       -aa
+       -ac
+       -g var/foobar
+       -R ${tmpdir}
+       all:
+       -Z *.bz2
+       -Z *.zip
+      "
+  in
+  let t =
+    load_configuration (make_t test_ctxt)
+      ~dir:(in_tmpdir ["etc"; "darckup.ini.d"])
+      (in_tmpdir ["etc"; "darckup.ini"])
+  in
+  let _ = create t in
+  let () =
+    (* Make sure that only the catalog will be used for incremental. *)
+    rm [in_tmpdir ["srv"; "backup"; "foobar_20150926_full.1.dar"]]
+  in
+  let _ = create t in
+    assert_equal_dir_list
+      ["foobar_20150926_full_catalog.1.dar";
+       "foobar_20150926_incr01.1.dar";
+       "foobar_20150926_incr01_catalog.1.dar"]
+      (in_tmpdir ["srv"; "backup"]);
+    ()
+
+
 let tests =
   [
     "ArchiveSet" >:: test_archive_set;
     "load+clean+create" >:: test_load_clean_create;
     "Executable" >:: test_executable;
+    "Catalog" >:: test_catalog;
   ]
 
 

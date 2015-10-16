@@ -35,10 +35,14 @@ sig
     *)
   val is_full: t -> bool
 
-  (** Return a prefix suitable to use with -A option of dar, for incremental
-      archive.
+  (** Test if there are catalogs for the archive.
     *)
-  val to_full_prefix: t -> filename
+  val has_catalogs: t -> bool
+
+  (** Return a prefix suitable to use with -@ option of dar, for archivei
+      catalog.
+    *)
+  val to_catalog_prefix: t -> filename
 
   (** Return a prefix suitable to use with -c option of dar.
     *)
@@ -83,9 +87,10 @@ sig
   val last: t -> Archive.t
 
   (** [next t max_incremental short_prefix] returns the archive that should be
-      created after the last one.
+      created after the last one and the full archive it should use, in case the
+      next one is an incremental.
     *)
-  val next: t -> int -> filename -> Archive.t
+  val next: t -> int -> filename -> Archive.t * Archive.t option
 
   (** [pop t] returns the archive set without the first element, which is
       returned as well.
@@ -140,6 +145,10 @@ type archive_set = {
   (** Maximal number of archives (clean).
     *)
   max_archives: int;
+
+  (** Whether or not create a catalog.
+    *)
+  create_catalog: bool;
 
   (** Hooks to run when handling this archive_set.
     *)

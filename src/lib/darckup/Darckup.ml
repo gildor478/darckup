@@ -43,29 +43,40 @@ struct
       {
         short_prefix: string;
         volumes: volumes;
+        catalogs: volumes;
         kind: kind;
       }
 
   let is_full t = t.kind = Full
 
-  let to_full_prefix t = t.short_prefix ^ "_full"
+  let has_catalogs t = not (IntMap.is_empty t.catalogs)
+
+  let in_same_group t1 t2 = t1.short_prefix = t2.short_prefix
 
   let to_prefix t =
     match t.kind with
     | Full -> t.short_prefix ^ "_full"
     | Incremental n -> Printf.sprintf "%s_incr%02d" t.short_prefix n
 
-  let to_filenames t = List.map snd (IntMap.bindings t.volumes)
+  let to_catalog_prefix t =
+    (to_prefix t)^"_catalog"
+
+  let to_filenames t =
+    List.map snd (IntMap.bindings t.volumes)
+    @
+    List.map snd (IntMap.bindings t.catalogs)
 
   let re =
     let open Re in
       compile (seq [group (rep any); (* 1 *)
                     alt [str "_full";
+                         str "_full";
                          seq [str "_incr";
                               opt (char '_');
                               group (rep1 digit)]]; (* 2 *)
+                    opt (group (str "_catalog"));  (* 3 *)
                     char '.';
-                    group (rep1 digit); (* 3 *)
+                    group (rep1 digit); (* 4 *)
                     str ".dar";
                     eol])
 
@@ -73,35 +84,43 @@ struct
     try
       let substr = Re.exec re s in
       let short_prefix = Re.get substr 1 in
-      let volume = int_of_string (Re.get substr 3) in
+      let is_catalog = Re.test substr 3 in
+      let volume = int_of_string (Re.get substr 4) in
       let kind =
         try
           Incremental (int_of_string (Re.get substr 2))
         with Not_found ->
           Full
       in
+      let mp = IntMap.add volume s IntMap.empty in
+      let volumes, catalogs =
+        if is_catalog then IntMap.empty, mp else mp, IntMap.empty
+      in
         {
           short_prefix;
-          volumes = IntMap.add volume s IntMap.empty;
-          kind = kind;
+          volumes;
+          catalogs;
+          kind;
         }
     with Not_found ->
       invalid_arg s
 
   let merge t1 t2 =
     let open IntMap in
+    let mp_merge =
+      merge
+        (fun _ e1 e2 ->
+           match e1, e2 with
+             | Some fn1, Some fn2 ->
+                 if fn1 <> fn2 then
+                   invalid_arg fn2;
+                 e1
+             | None, e | e, None -> e)
+    in
     if to_prefix t1 = to_prefix t2 then
       {t1 with
-           volumes =
-             merge
-               (fun _ e1 e2 ->
-                  match e1, e2 with
-                  | Some fn1, Some fn2 ->
-                      if fn1 <> fn2 then
-                        invalid_arg fn2;
-                      e1
-                  | None, e | e, None -> e)
-               t1.volumes t2.volumes}
+           volumes = mp_merge t1.volumes t2.volumes;
+           catalogs = mp_merge t1.catalogs t2.catalogs}
     else
       invalid_arg (to_prefix t2)
 end
@@ -117,12 +136,12 @@ struct
 
   type t = Archive.t M.t
 
-  let add a t =
+  let add archv t =
     let open Archive in
-    let k = to_prefix a in
-      M.add k (try merge (M.find k t) a with Not_found -> a) t
+    let k = to_prefix archv in
+      M.add k (try merge (M.find k t) archv with Not_found -> archv) t
 
-  let remove a t =
+  let remove archv t =
     t (* TODO *)
 
   let of_filenames =
@@ -137,17 +156,21 @@ struct
   let to_filenames t =
     List.rev
       (M.fold
-         (fun _ a l -> List.rev_append (Archive.to_filenames a) l)
+         (fun _ archv l -> List.rev_append (Archive.to_filenames archv) l)
          t [])
 
   let length = M.cardinal
 
   let last t = snd (M.max_binding t)
 
+  let last_full t =
+    last (M.filter (fun _ archv -> Archive.is_full archv) t)
+
   let next t max_incremental short_prefix =
     let open Archive in
-    let make a =
-      {a with volumes = IntMap.add 1 ((to_prefix a)^".1.dar") IntMap.empty}
+    let make archv =
+      {archv with
+           volumes = IntMap.add 1 ((to_prefix archv)^".1.dar") IntMap.empty}
     in
     let full =
       make
@@ -155,52 +178,53 @@ struct
           short_prefix;
           kind = Full;
           volumes = IntMap.empty;
+          catalogs = IntMap.empty;
         }
     in
-    let a =
+    let archv, opt_ref_archv =
       if max_incremental <= 0 || length t = 0 then begin
-        full
+        full, None
       end else begin
         match last t with
-          | { kind = Full } as a ->
-              make {a with kind = Incremental 1}
-          | { kind = Incremental n } as a ->
+          | { kind = Full } as archv ->
+              make {archv with kind = Incremental 1}, Some (last_full t)
+          | { kind = Incremental n } as archv ->
               if n + 1 <= max_incremental then
-                make {a with kind = Incremental (n + 1)}
+                make {archv with kind = Incremental (n + 1)}, Some (last_full t)
               else
-                full
+                full, None
       end
     in
-      if not (length t = 0) && (last (add a t)) <> a then
+      if not (length t = 0) && (last (add archv t)) <> archv then
         failwith
           (Printf.sprintf
              "Next archive %s will not be sorted as the last one, reset the \
               now_rfc3339 string to make sure the result will be sorted \
               after %s (the actual last one)"
-             (Archive.to_prefix a) (Archive.to_prefix (last t)));
-      a
+             (Archive.to_prefix archv) (Archive.to_prefix (last t)));
+      archv, opt_ref_archv
 
   let rec pop t =
-    let prefix, a = M.min_binding t in
+    let prefix, archv = M.min_binding t in
     let t = M.remove prefix t in
-      if not (M.is_empty t) && Archive.is_full a then begin
-        match  snd (M.min_binding t) with
-          | {Archive.kind = Archive.Incremental _} as a'
-              when Archive.to_full_prefix a = Archive.to_full_prefix a' ->
-              let t, a' = pop t in add a t, a'
-          | _ ->
-              t, a
+      if not (M.is_empty t) && Archive.is_full archv then begin
+        match snd (M.min_binding t) with
+        | {Archive.kind = Archive.Incremental _} as archv'
+            when Archive.in_same_group archv archv' ->
+            let t, archv' = pop t in add archv t, archv'
+        | _ ->
+            t, archv
       end else begin
-        t, a
+        t, archv
       end
 
   let rec npop n t =
     if n <= 0 then
       t, []
     else
-      let t, a = pop t in
+      let t, archv = pop t in
       let t, l = npop (n - 1) t in
-        t, a :: l
+        t, archv :: l
 end
 
 
@@ -226,6 +250,7 @@ type archive_set = {
   base_prefix: string;
   max_incrementals: int;
   max_archives: int;
+  create_catalog: bool;
   archive_set_hooks: hooks
 }
 
@@ -410,6 +435,7 @@ let load_one_configuration t fn =
                    archive_set_hooks = default_hooks;
                    max_incrementals = 6;
                    max_archives = 30;
+                   create_catalog = false;
                  }
              in
              let aset =
@@ -431,6 +457,9 @@ let load_one_configuration t fn =
                  max_archives =
                    get ~default:aset.max_archives (integer_with_min 0)
                      sect "max_archives";
+                 create_catalog =
+                   get ~default:aset.create_catalog bool_of_string
+                     sect "create_catalog";
                }
              in
              let rec replace_append =
@@ -667,7 +696,7 @@ let create t =
   let lst =
     List.map
       (fun (aname, aset, archv_set) ->
-         let archv =
+         let archv, opt_ref_archive =
            ArchiveSet.next archv_set aset.max_incrementals
              (Filename.concat
                 aset.backup_dir (aset.base_prefix ^ "_" ^ t.now_rfc3339))
@@ -676,10 +705,18 @@ let create t =
            let open Command in
              [A "-c"; Fn (Archive.to_prefix archv); A "-noconf";
               A "-B"; Fn aset.darrc]
-             @ (if not (Archive.is_full archv) then
-                  [A "-A"; Fn (Archive.to_full_prefix archv)]
+             @ (match opt_ref_archive with
+                | Some archv when Archive.has_catalogs archv ->
+                    [A "-A"; Fn (Archive.to_catalog_prefix archv)]
+                | Some archv ->
+                    [A "-A"; Fn (Archive.to_prefix archv)]
+                | None ->
+                    [])
+             @ (if aset.create_catalog then
+                  [A "--on-fly-isolate"; Fn (Archive.to_catalog_prefix archv)]
                 else
                   [])
+
          in
          let pre_create_command  =
            run_hook t
