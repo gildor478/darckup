@@ -186,22 +186,37 @@ let test_archive_set test_ctxt =
     ()
 
 
-let make_t test_ctxt =
-  {
-    default with
-        dar = dar_exec test_ctxt;
-        now_rfc3339 = "20150926";
-        log =
-          (fun lvl s ->
-             begin
-               match lvl with
-               | `Debug -> ()
-               | (`Info | `Warning | `Error) as lvl' ->
-                   logf test_ctxt lvl' "%s" s
-             end;
-             if lvl = `Error || lvl = `Warning then
-               failwith s);
-  }
+module T =
+struct
+  let create test_ctxt in_tmpdir =
+    let t =
+      {
+        default with
+            dar = dar_exec test_ctxt;
+            now_rfc3339 = "20150926";
+            log =
+              (fun lvl s ->
+                 begin
+                   match lvl with
+                   | `Debug -> ()
+                   | (`Info | `Warning | `Error) as lvl' ->
+                       logf test_ctxt lvl' "%s" s
+                 end;
+                 if lvl = `Error || lvl = `Warning then
+                   failwith s);
+      }
+    in
+    let t =
+      load_configuration t
+        ~dir:(in_tmpdir ["etc"; "darckup.ini.d"])
+        (in_tmpdir ["etc"; "darckup.ini"])
+    in
+      ref t
+
+  let set_now_rfc3339 rt now_rfc3339 =
+    rt := {!rt with now_rfc3339};
+    !rt
+end
 
 
 let setup_filesystem test_ctxt =
@@ -210,15 +225,6 @@ let setup_filesystem test_ctxt =
   let write_file lst cnt =
     write_file test_ctxt ["tmpdir", tmpdir] (in_tmpdir lst) cnt
   in
-    tmpdir, in_tmpdir, write_file
-
-
-let test_load_clean_create test_ctxt =
-  let t = make_t test_ctxt in
-  let tmpdir, in_tmpdir, write_file = setup_filesystem test_ctxt in
-  let open FileUtil in
-  let open FilePath in
-  let () =
     (* Populate the filesystem. *)
     mkdir ~parent:true (in_tmpdir ["var"; "foobar"]);
     touch (in_tmpdir ["var"; "foobar"; "01.txt"]);
@@ -227,23 +233,82 @@ let test_load_clean_create test_ctxt =
     touch (in_tmpdir ["var"; "barbaz"; "01.txt"]);
     touch (in_tmpdir ["var"; "barbaz"; "02.txt"]);
     mkdir ~parent:true (in_tmpdir ["srv"; "backup"]);
-    (* Create etc/darckup.ini. *)
-    write_file ["etc"; "darckup.ini"]
+    (* Return the useful functions. *)
+    tmpdir, in_tmpdir, write_file
+
+
+let create_ignore_result t =
+  let _lst: (string * Archive.t) list = create t in ()
+
+
+module Examples =
+struct
+  let darrc =
+    "create:
+     -w
+     -D
+     -z
+     -aa
+     -ac
+     -g var/foobar
+     -R ${tmpdir}
+     all:
+     -Z *.bz2
+     -Z *.zip
+      "
+  let default =
       "[default]
        ignore_glob_files=*.md5sums,*.done
        post_create_command=touch \"${tmpdir}/sync-done\"
        post_clean_command=rm -f \"${tmpdir}/sync-done\"
-      ";
-    write_file ["etc"; "darckup.ini.d"; "00foobar.ini"]
+      "
+  let archive_set_foobar =
       "[archive_set:foobar]
        backup_dir=${tmpdir}/srv/backup
        darrc=${tmpdir}/etc/foobar.darrc
-       post_create_command=touch \\${current.archive.prefix}.done
-       pre_clean_command=rm \\${current.archive.prefix}.done
        base_prefix=foobar
        max_incrementals=1
        max_archives=3
-      ";
+      "
+end
+
+
+let rec comb p lst acc =
+  match lst with
+    | hd :: tl ->
+        List.fold_left
+          (fun acc p -> comb p tl acc)
+          acc
+          (List.rev_map (fun s -> p ^ s) hd)
+    |   [] ->
+        p :: acc
+
+
+let test_load_clean_create test_ctxt =
+  let open FileUtil in
+  let open FilePath in
+  let tmpdir, in_tmpdir, write_file = setup_filesystem test_ctxt in
+  let create_current_files =
+    comb "foobar_201509"
+      [ ["26"; "29"]; ["_full"; "_incr01"; "_incr02"]; [".1.dar"; ".done"]]
+      (comb "barbaz_201509"
+         [["26"; "28"; "30"]; ["_full"; "_incr01"]; [".1.dar"]] [])
+  in
+  let clean_current_files =
+    comb "foobar_201509"
+      [ ["29"]; ["_full"; "_incr01"; "_incr02"]; [".1.dar"; ".done"]]
+      (comb "barbaz_201509"
+         [["30"]; ["_full"; "_incr01"]; [".1.dar"]]
+         ["barbaz_20150928_full.1.dar"])
+  in
+  let () =
+    (* Create etc/darckup.ini. *)
+    write_file ["etc"; "darckup.ini"] Examples.default;
+    write_file ["etc"; "darckup.ini.d"; "00foobar.ini"]
+      (Examples.archive_set_foobar
+       ^"post_create_command=touch \\${current.archive.prefix}.done
+         pre_clean_command=rm \\${current.archive.prefix}.done
+        ");
     write_file ["etc"; "darckup.ini.d"; "01foobar.ini"]
       "[archive_set:foobar]
        max_incrementals=2
@@ -256,91 +321,52 @@ let test_load_clean_create test_ctxt =
        max_incrementals=1
        max_archives=3
       ";
-    (* Create etc/foobar.darrc. *)
-    write_file ["etc"; "foobar.darrc"]
-      "create:
-       -w
-       -D
-       -z
-       -aa
-       -ac
-       -g var/foobar
-       -R ${tmpdir}
-       all:
-       -Z *.Z
-       -Z *.bz2
-       -Z *.gz
-       -Z *.jpg
-       -Z *.mp3
-       -Z *.mpg
-       -Z *.tgz
-       -Z *.zip
-      ";
-    (* Create etc/barbaz.darrc. *)
-    write_file ["etc"; "barbaz.darrc"]
-      "create:
-       -w
-       -D
-       -z
-       -aa
-       -ac
-       -g var/barbaz
-       -R ${tmpdir}
-       all:
-       -Z *.Z
-       -Z *.bz2
-       -Z *.gz
-       -Z *.jpg
-       -Z *.mp3
-       -Z *.mpg
-       -Z *.tgz
-       -Z *.zip
-      "
+    write_file ["etc"; "foobar.darrc"] Examples.darrc;
+    write_file ["etc"; "barbaz.darrc"] Examples.darrc
   in
-  let t =
-    load_configuration t
-      ~dir:(in_tmpdir ["etc"; "darckup.ini.d"])
-      (in_tmpdir ["etc"; "darckup.ini"])
-  in
-  let () =
+  let afoobar t = List.assoc "foobar" t.archive_sets in
+  let t = T.create test_ctxt in_tmpdir in
     (* Check result of loading INI file. *)
     StringListDiff.assert_equal
-      ["*.md5sums"; "*.done"] t.ignore_glob_files;
+      ["*.md5sums"; "*.done"]
+      !t.ignore_glob_files;
     StringListDiff.assert_equal
-      ["foobar"; "barbaz"] (List.map fst t.archive_sets);
-  in
-  let afoobar = List.assoc "foobar" t.archive_sets in
-  let () =
+      ["foobar"; "barbaz"]
+      (List.map fst !t.archive_sets);
     assert_equal ~printer:(function Some s -> s | None -> "none")
       (Some ("touch \"" ^ tmpdir ^ "/sync-done\""))
-      t.global_hooks.post_create_command;
+      !t.global_hooks.post_create_command;
     assert_equal ~printer:(function Some s -> s | None -> "none")
       (Some "touch ${current.archive.prefix}.done")
-      afoobar.archive_set_hooks.post_create_command;
+      (afoobar !t).archive_set_hooks.post_create_command;
     assert_equal ~printer:(function Some s -> s | None -> "none")
       (Some "rm ${current.archive.prefix}.done")
-      afoobar.archive_set_hooks.pre_clean_command;
-    assert_equal ~printer:(fun s -> s) "foobar" afoobar.base_prefix;
-    assert_equal ~printer:string_of_int 2 afoobar.max_incrementals;
+      (afoobar !t).archive_set_hooks.pre_clean_command;
+    assert_equal
+      ~printer:(fun s -> s)
+      "foobar"
+      (afoobar !t).base_prefix;
+    assert_equal
+      ~printer:string_of_int
+      2
+      (afoobar !t).max_incrementals;
     assert_equal ~printer:string_of_int
-      3 (List.assoc "foobar" t.archive_sets).max_archives
-  in
-  let _ = create {t with dry_run = true} in
-  let _ = create t in
-  let () =
-    (* Check result of first run. *)
+      3
+      (List.assoc "foobar" !t.archive_sets).max_archives;
+
+    (* 1st create *)
+    create_ignore_result {!t with dry_run = true};
+    create_ignore_result !t;
     assert_equal_dir_list
       ["foobar_20150926_full.1.dar";
        "foobar_20150926_full.done";
 
        "barbaz_20150926_full.1.dar"]
-      (in_tmpdir ["srv"; "backup"])
-  in
-  let t = {t with now_rfc3339 = "20150927"} in
-  let _lst = create {t with dry_run = true} in
-  let _lst = create t in
-  let () =
-    (* Check result of second run. *)
+      (in_tmpdir ["srv"; "backup"]);
+
+    (* 2nd create. *)
+    create_ignore_result {(T.set_now_rfc3339 t "20150927") with dry_run = true};
+    create_ignore_result !t;
     assert_equal_dir_list
       ["srv"; "etc"; "var"; "sync-done"]
       (in_tmpdir []);
@@ -356,119 +382,52 @@ let test_load_clean_create test_ctxt =
     assert_bigger_size
       (in_tmpdir ["srv"; "backup"; "foobar_20150926_full.1.dar"])
       (in_tmpdir ["srv"; "backup"; "foobar_20150926_incr01.1.dar"]);
-  in
-  (* Simulate a few days run. *)
-  let t = {t with now_rfc3339 = "20150928"} in
-  let _lst = create t in
-  let t = {t with now_rfc3339 = "20150929"} in
-  let _lst = create t in
-  let t = {t with now_rfc3339 = "20150930"} in
-  let _lst = create t in
-  let t = {t with now_rfc3339 = "20151001"} in
-  let _lst = create t in
-  let current_files =
-    ["foobar_20150926_full.1.dar";
-     "foobar_20150926_full.done";
-     "foobar_20150926_incr01.1.dar";
-     "foobar_20150926_incr01.done";
-     "foobar_20150926_incr02.1.dar";
-     "foobar_20150926_incr02.done";
-     "foobar_20150929_full.1.dar";
-     "foobar_20150929_full.done";
-     "foobar_20150929_incr01.1.dar";
-     "foobar_20150929_incr01.done";
-     "foobar_20150929_incr02.1.dar";
-     "foobar_20150929_incr02.done";
 
-     "barbaz_20150926_full.1.dar";
-     "barbaz_20150926_incr01.1.dar";
-     "barbaz_20150928_full.1.dar";
-     "barbaz_20150928_incr01.1.dar";
-     "barbaz_20150930_full.1.dar";
-     "barbaz_20150930_incr01.1.dar"]
-  in
-  let () =
-    (* Check result of second run. *)
+    (* Simulate a few days run. *)
+    create_ignore_result (T.set_now_rfc3339 t "20150928");
+    create_ignore_result (T.set_now_rfc3339 t "20150929");
+    create_ignore_result (T.set_now_rfc3339 t "20150930");
+    create_ignore_result (T.set_now_rfc3339 t "20151001");
+
+    (* Check result of a few days *)
     assert_equal_dir_list
       ["srv"; "etc"; "var"; "sync-done"]
       (in_tmpdir []);
-    assert_equal_dir_list current_files (in_tmpdir ["srv"; "backup"]);
-  in
-  let () = clean {t with dry_run = true} in
-  let () =
+    assert_equal_dir_list create_current_files (in_tmpdir ["srv"; "backup"]);
+
     (* Check no changes with dry_run. *)
+    clean {!t with dry_run = true};
     assert_equal_dir_list
       ["srv"; "etc"; "var"; "sync-done"]
       (in_tmpdir []);
-    assert_equal_dir_list current_files (in_tmpdir ["srv"; "backup"])
-  in
-  let () = clean t in
-  let current_files =
-    ["foobar_20150929_full.1.dar";
-     "foobar_20150929_full.done";
-     "foobar_20150929_incr01.1.dar";
-     "foobar_20150929_incr01.done";
-     "foobar_20150929_incr02.1.dar";
-     "foobar_20150929_incr02.done";
-     "barbaz_20150928_full.1.dar";
-     "barbaz_20150930_full.1.dar";
-     "barbaz_20150930_incr01.1.dar"]
-  in
-  let () =
-    (* Check result of clean. *)
+    assert_equal_dir_list create_current_files (in_tmpdir ["srv"; "backup"]);
+
+    (* 1st clean. *)
+    clean !t;
     assert_equal_dir_list ["srv"; "etc"; "var"] (in_tmpdir []);
-    assert_equal_dir_list current_files (in_tmpdir ["srv"; "backup"])
-  in
-  let () = clean t in
-  let () =
-    (* Check result of 2nd clean. *)
-    assert_equal_dir_list current_files (in_tmpdir ["srv"; "backup"])
-  in
-    ()
+    assert_equal_dir_list clean_current_files (in_tmpdir ["srv"; "backup"]);
+
+    (* 2nd clean. *)
+    clean !t;
+    assert_equal_dir_list clean_current_files (in_tmpdir ["srv"; "backup"])
 
 
 let test_executable test_ctxt =
-  let tmpdir, in_tmpdir, write_file = setup_filesystem test_ctxt in
   let open FileUtil in
   let open FilePath in
+  let tmpdir, in_tmpdir, write_file = setup_filesystem test_ctxt in
   let darckup cmd now_rfc3339 args =
     assert_command ~ctxt:test_ctxt (darckup_exec test_ctxt)
       ([cmd; "--verbose";
         "--ini"; in_tmpdir ["etc"; "darckup.ini"];
         "--now_rfc3339"; now_rfc3339] @ args)
   in
-    (* Populate the filesystem. *)
-    mkdir ~parent:true (in_tmpdir ["var"; "foobar"]);
-    touch (in_tmpdir ["var"; "foobar"; "01.txt"]);
-    write_file ["var"; "foobar"; "02.txt"] (String.make 1512 'x');
-    mkdir ~parent:true (in_tmpdir ["srv"; "backup"]);
     (* Create etc/darckup.ini. *)
     write_file ["etc"; "darckup.ini"]
-      "[default]
-       ignore_glob_files=*.md5sums,*.done
-       post_create_command=touch \"${tmpdir}/sync-done\"
-       post_clean_command=rm -f \"${tmpdir}/sync-done\"
-       [archive_set:foobar]
-       backup_dir=${tmpdir}/srv/backup
-       darrc=${tmpdir}/etc/foobar.darrc
-       base_prefix=foobar
-       max_incrementals=1
-       max_archives=3
-      ";
+      (Examples.default
+       ^ Examples.archive_set_foobar);
     (* Create etc/foobar.darrc. *)
-    write_file ["etc"; "foobar.darrc"]
-      "create:
-       -w
-       -D
-       -z
-       -aa
-       -ac
-       -g var/foobar
-       -R ${tmpdir}
-       all:
-       -Z *.bz2
-       -Z *.zip
-      ";
+    write_file ["etc"; "foobar.darrc"] Examples.darrc;
     darckup "create" "20150929" ["--all_archive_sets"];
     darckup "clean" "20150929" ["--all_archive_sets"];
     darckup "cronjob" "20150930" ["--all_archive_sets"];
@@ -481,57 +440,24 @@ let test_executable test_ctxt =
       (in_tmpdir ["srv"; "backup"]);
     ()
 
-
 let test_catalog test_ctxt =
-  let tmpdir, in_tmpdir, write_file = setup_filesystem test_ctxt in
   let open FileUtil in
   let open FilePath in
+  let tmpdir, in_tmpdir, write_file = setup_filesystem test_ctxt in
   let () =
-    (* Populate the filesystem. *)
-    mkdir ~parent:true (in_tmpdir ["var"; "foobar"]);
-    touch (in_tmpdir ["var"; "foobar"; "01.txt"]);
-    write_file ["var"; "foobar"; "02.txt"] (String.make 1512 'x');
-    mkdir ~parent:true (in_tmpdir ["srv"; "backup"]);
     (* Create etc/darckup.ini. *)
     write_file ["etc"; "darckup.ini"]
-      "[default]
-       ignore_glob_files=*.md5sums,*.done
-       post_create_command=touch \"${tmpdir}/sync-done\"
-       post_clean_command=rm -f \"${tmpdir}/sync-done\"
-       [archive_set:foobar]
-       backup_dir=${tmpdir}/srv/backup
-       darrc=${tmpdir}/etc/foobar.darrc
-       base_prefix=foobar
-       max_incrementals=1
-       max_archives=3
-       create_catalog=true
-      ";
+      (Examples.default
+       ^ Examples.archive_set_foobar
+       ^ "create_catalog=true\n");
     (* Create etc/foobar.darrc. *)
-    write_file ["etc"; "foobar.darrc"]
-      "create:
-       -w
-       -D
-       -z
-       -aa
-       -ac
-       -g var/foobar
-       -R ${tmpdir}
-       all:
-       -Z *.bz2
-       -Z *.zip
-      "
+    write_file ["etc"; "foobar.darrc"] Examples.darrc
   in
-  let t =
-    load_configuration (make_t test_ctxt)
-      ~dir:(in_tmpdir ["etc"; "darckup.ini.d"])
-      (in_tmpdir ["etc"; "darckup.ini"])
-  in
-  let _ = create t in
-  let () =
+  let t = T.create test_ctxt in_tmpdir in
+    create_ignore_result !t;
     (* Make sure that only the catalog will be used for incremental. *)
-    rm [in_tmpdir ["srv"; "backup"; "foobar_20150926_full.1.dar"]]
-  in
-  let _ = create t in
+    rm [in_tmpdir ["srv"; "backup"; "foobar_20150926_full.1.dar"]];
+    create_ignore_result !t;
     assert_equal_dir_list
       ["foobar_20150926_full_catalog.1.dar";
        "foobar_20150926_incr01.1.dar";
