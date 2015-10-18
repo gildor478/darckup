@@ -169,13 +169,13 @@ let test_archive_set test_ctxt =
     (* next *)
     assert_equal_next
       ("foobar_20150907_full", None)
-      (ArchiveSet.next set 1 "foobar_20150907");
+      (ArchiveSet.next set (Some 1) "foobar_20150907");
     assert_equal_next
       ("foobar_20150905_incr02", Some "foobar_20150905_full")
-      (ArchiveSet.next set 2 "foobar_20150907");
+      (ArchiveSet.next set (Some 2) "foobar_20150907");
     begin
       try
-        let _, _ = ArchiveSet.next set 1 "foobar_20150904" in
+        let _, _ = ArchiveSet.next set (Some 1) "foobar_20150904" in
           assert_failure
             "ArchiveSet.next create an archive that will not be the \
              last one."
@@ -270,6 +270,15 @@ struct
        max_incrementals=1
        max_archives=3
       "
+
+  let archive_set_barbaz =
+      "[archive_set:barbaz]
+       backup_dir=${tmpdir}/srv/backup
+       darrc=../barbaz.darrc
+       base_prefix=barbaz
+       max_incrementals=1
+       max_archives=3
+      "
 end
 
 
@@ -285,8 +294,6 @@ let rec comb p lst acc =
 
 
 let test_load_clean_create test_ctxt =
-  let open FileUtil in
-  let open FilePath in
   let tmpdir, in_tmpdir, write_file = setup_filesystem test_ctxt in
   let create_current_files =
     comb "foobar_201509"
@@ -314,13 +321,7 @@ let test_load_clean_create test_ctxt =
        max_incrementals=2
       ";
     write_file ["etc"; "darckup.ini.d"; "02barbaz.ini"]
-      "[archive_set:barbaz]
-       backup_dir=${tmpdir}/srv/backup
-       darrc=../barbaz.darrc
-       base_prefix=barbaz
-       max_incrementals=1
-       max_archives=3
-      ";
+      Examples.archive_set_barbaz;
     write_file ["etc"; "foobar.darrc"] Examples.darrc;
     write_file ["etc"; "barbaz.darrc"] Examples.darrc
   in
@@ -347,8 +348,8 @@ let test_load_clean_create test_ctxt =
       "foobar"
       (afoobar !t).base_prefix;
     assert_equal
-      ~printer:string_of_int
-      2
+      ~printer:(function Some d -> string_of_int d | None -> "<none>")
+      (Some 2)
       (afoobar !t).max_incrementals;
     assert_equal ~printer:string_of_int
       3
@@ -413,8 +414,6 @@ let test_load_clean_create test_ctxt =
 
 
 let test_executable test_ctxt =
-  let open FileUtil in
-  let open FilePath in
   let tmpdir, in_tmpdir, write_file = setup_filesystem test_ctxt in
   let darckup cmd now_rfc3339 args =
     assert_command ~ctxt:test_ctxt (darckup_exec test_ctxt)
@@ -442,7 +441,6 @@ let test_executable test_ctxt =
 
 let test_catalog test_ctxt =
   let open FileUtil in
-  let open FilePath in
   let tmpdir, in_tmpdir, write_file = setup_filesystem test_ctxt in
   let () =
     (* Create etc/darckup.ini. *)
@@ -466,12 +464,66 @@ let test_catalog test_ctxt =
     ()
 
 
+let test_always_incremental test_ctxt =
+  let open FileUtil in
+  let tmpdir, in_tmpdir, write_file = setup_filesystem test_ctxt in
+  let () =
+    (* Create etc/darckup.ini. *)
+    write_file ["etc"; "darckup.ini"]
+      (Examples.default
+       ^ Examples.archive_set_foobar
+       ^ "always_incremental=true\n"
+       ^ Examples.archive_set_barbaz
+       ^ "darrc=barbaz.darrc\n"
+       ^ "create_catalog=true\n");
+    (* Create etc/foobar.darrc. *)
+    write_file ["etc"; "foobar.darrc"] Examples.darrc;
+    write_file ["etc"; "barbaz.darrc"] Examples.darrc
+  in
+  let t = T.create test_ctxt in_tmpdir in
+  let has_error_log = ref false in
+    assert_raises
+      ArchiveSet.MissingFullArchive
+      (fun () ->
+         create_ignore_result
+           {!t
+              with
+                  log =
+                    (fun lvl s ->
+                       if lvl = `Error then
+                         has_error_log := true
+                       else
+                         !t.log lvl s)});
+    assert_bool
+      "At least one error emitted."
+      !has_error_log;
+    assert_equal_dir_list
+      ["barbaz_20150926_full.1.dar";
+       "barbaz_20150926_full_catalog.1.dar"]
+      (in_tmpdir ["srv"; "backup"]);
+    mv
+      (in_tmpdir ["srv"; "backup"; "barbaz_20150926_full_catalog.1.dar"])
+      (in_tmpdir ["srv"; "backup"; "foobar_20150926_full_catalog.1.dar"]);
+    rm [in_tmpdir ["srv"; "backup"; "barbaz_20150926_full.1.dar"]];
+    t := {!t with
+              archive_sets =
+                List.filter
+                  (fun (aname, _) -> aname = "foobar") !t.archive_sets};
+    create_ignore_result !t;
+    assert_equal_dir_list
+      ["foobar_20150926_full_catalog.1.dar";
+       "foobar_20150926_incr01.1.dar"]
+      (in_tmpdir ["srv"; "backup"]);
+    ()
+
+
 let tests =
   [
     "ArchiveSet" >:: test_archive_set;
     "load+clean+create" >:: test_load_clean_create;
     "Executable" >:: test_executable;
     "Catalog" >:: test_catalog;
+    "AlwaysIncremental" >:: test_always_incremental;
   ]
 
 

@@ -86,11 +86,16 @@ sig
     *)
   val last: t -> Archive.t
 
+  (** Exception raised when it is not possible to find the last full archive.
+    *)
+  exception MissingFullArchive
+
   (** [next t max_incremental short_prefix] returns the archive that should be
       created after the last one and the full archive it should use, in case the
-      next one is an incremental.
+      next one is an incremental. If [max_incremental] is [None], always return
+      an incremental archive.
     *)
-  val next: t -> int -> filename -> Archive.t * Archive.t option
+  val next: t -> int option -> filename -> Archive.t * Archive.t option
 
   (** [pop t] returns the archive set without the first element, which is
       returned as well.
@@ -139,8 +144,12 @@ type archive_set = {
   base_prefix: string;
 
   (** Maximal number of incremental archives (create).
+      If the value is [None], only incremental archives
+      will be generated.
+      The [None] value is controlled by the the [always_incremental] INI file
+       setting.
     *)
-  max_incrementals: int;
+  max_incrementals: int option;
 
   (** Maximal number of archives (clean).
     *)

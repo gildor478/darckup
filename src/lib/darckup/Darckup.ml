@@ -127,6 +127,14 @@ end
 
 module ArchiveSet =
 struct
+  exception MissingFullArchive
+
+  let () =
+    Printexc.register_printer
+      (function
+         | MissingFullArchive -> Some "MissingFullArchive"
+         | _ -> None)
+
   module M =
     Map.Make
       (struct
@@ -161,10 +169,15 @@ struct
 
   let length = M.cardinal
 
-  let last t = snd (M.max_binding t)
+  let last t =
+    try
+      snd (M.max_binding t)
+    with Not_found ->
+      raise MissingFullArchive
 
   let last_full t =
     last (M.filter (fun _ archv -> Archive.is_full archv) t)
+
 
   let next t max_incremental short_prefix =
     let open Archive in
@@ -172,28 +185,50 @@ struct
       {archv with
            volumes = IntMap.add 1 ((to_prefix archv)^".1.dar") IntMap.empty}
     in
-    let full =
+    let full () =
       make
         {
           short_prefix;
           kind = Full;
           volumes = IntMap.empty;
           catalogs = IntMap.empty;
-        }
+        },
+      None
+    in
+    let incremental n =
+      let full = last_full t in
+        make
+          {
+            short_prefix = full.short_prefix;
+            kind = Incremental n;
+            volumes = IntMap.empty;
+            catalogs = IntMap.empty;
+          },
+        Some full
     in
     let archv, opt_ref_archv =
-      if max_incremental <= 0 || length t = 0 then begin
-        full, None
-      end else begin
-        match last t with
-          | { kind = Full } as archv ->
-              make {archv with kind = Incremental 1}, Some (last_full t)
-          | { kind = Incremental n } as archv ->
-              if n + 1 <= max_incremental then
-                make {archv with kind = Incremental (n + 1)}, Some (last_full t)
-              else
-                full, None
-      end
+      match max_incremental with
+      | Some d ->
+          begin
+            if d <= 0 || length t = 0 then begin
+              full ()
+            end else begin
+              match last t with
+                | { kind = Full } ->
+                    incremental 1
+                | { kind = Incremental n } ->
+                    if n + 1 <= d then
+                      incremental (n + 1)
+                    else
+                      full ()
+            end
+          end
+      | None ->
+          begin
+            match last t with
+            | { kind = Full } -> incremental 1
+            | { kind = Incremental n } -> incremental (n + 1)
+          end
     in
       if not (length t = 0) && (last (add archv t)) <> archv then
         failwith
@@ -248,7 +283,7 @@ type archive_set = {
   backup_dir: filename;
   darrc: filename;
   base_prefix: string;
-  max_incrementals: int;
+  max_incrementals: int option;
   max_archives: int;
   create_catalog: bool;
   archive_set_hooks: hooks
@@ -433,10 +468,27 @@ let load_one_configuration t fn =
                    darrc = get file_exists sect "darrc";
                    base_prefix = get identity sect "base_prefix";
                    archive_set_hooks = default_hooks;
-                   max_incrementals = 6;
+                   max_incrementals = Some 6;
                    max_archives = 30;
                    create_catalog = false;
                  }
+             in
+             let max_incrementals =
+               let always_incremental, max_incrementals =
+                 match aset.max_incrementals with
+                 | Some x -> false, x
+                 | None -> true, 6
+               in
+               let always_incremental =
+                 get ~default:always_incremental bool_of_string
+                   sect "always_incremental"
+               in
+                 if not always_incremental then
+                   Some
+                     (get ~default:max_incrementals (integer_with_min 0)
+                        sect "max_incrementals")
+                 else
+                   None
              in
              let aset =
                {
@@ -451,15 +503,13 @@ let load_one_configuration t fn =
                      sect "base_prefix";
                  archive_set_hooks =
                    parse_hooks sect aset.archive_set_hooks;
-                 max_incrementals =
-                   get ~default:aset.max_incrementals (integer_with_min 0)
-                     sect "max_incrementals";
                  max_archives =
                    get ~default:aset.max_archives (integer_with_min 0)
                      sect "max_archives";
                  create_catalog =
                    get ~default:aset.create_catalog bool_of_string
                      sect "create_catalog";
+                 max_incrementals;
                }
              in
              let rec replace_append =
@@ -639,11 +689,15 @@ let map_variables =
     StringMap.empty variables
 
 
+let archive_set_id aname =
+  "archive_set:" ^ aname
+
+
 let run_hook t ?with_archive_set ?with_archive fname cmd_opt =
   let id =
     match with_archive_set with
-    | Some (aname, aset, _) ->
-        Printf.sprintf "archive_set:%s->%s" aname fname
+    | Some (aname, i_, _) ->
+        Printf.sprintf "%s->%s" (archive_set_id aname) fname
     | None ->
         Printf.sprintf "default->%s" fname
   in
@@ -693,48 +747,67 @@ let run_hook t ?with_archive_set ?with_archive fname cmd_opt =
 
 
 let create t =
-  let lst =
-    List.map
-      (fun (aname, aset, archv_set) ->
-         let archv, opt_ref_archive =
-           ArchiveSet.next archv_set aset.max_incrementals
-             (Filename.concat
-                aset.backup_dir (aset.base_prefix ^ "_" ^ t.now_rfc3339))
-         in
-         let dar_args =
-           let open Command in
-             [A "-c"; Fn (Archive.to_prefix archv); A "-noconf";
-              A "-B"; Fn aset.darrc]
-             @ (match opt_ref_archive with
-                | Some archv when Archive.has_catalogs archv ->
-                    [A "-A"; Fn (Archive.to_catalog_prefix archv)]
-                | Some archv ->
-                    [A "-A"; Fn (Archive.to_prefix archv)]
-                | None ->
-                    [])
-             @ (if aset.create_catalog then
-                  [A "--on-fly-isolate"; Fn (Archive.to_catalog_prefix archv)]
-                else
-                  [])
-
-         in
-         let pre_create_command  =
-           run_hook t
-             ~with_archive_set:(aname, aset, archv_set)
-             ~with_archive:archv
-             "pre_create_command"
-             aset.archive_set_hooks.pre_create_command
-         in
-         let archv_set = ArchiveSet.add archv archv_set in
-         let post_create_command =
-           run_hook t
-             ~with_archive_set:(aname, aset, archv_set)
-             ~with_archive:archv
-             "post_create_command"
-             aset.archive_set_hooks.post_create_command
-         in
-           (aname, archv), pre_create_command, dar_args, post_create_command)
-      (load_archive_sets t)
+  let create_one aname aset archv_set =
+    let archv, opt_ref_archive =
+      ArchiveSet.next archv_set aset.max_incrementals
+        (Filename.concat
+           aset.backup_dir (aset.base_prefix ^ "_" ^ t.now_rfc3339))
+    in
+    let dar_args =
+      let open Command in
+        [A "-c"; Fn (Archive.to_prefix archv); A "-noconf";
+         A "-B"; Fn aset.darrc]
+        @ (match opt_ref_archive with
+           | Some archv when Archive.has_catalogs archv ->
+               [A "-A"; Fn (Archive.to_catalog_prefix archv)]
+           | Some archv ->
+               [A "-A"; Fn (Archive.to_prefix archv)]
+           | None ->
+               [])
+        @ (if aset.create_catalog then
+             [A "--on-fly-isolate"; Fn (Archive.to_catalog_prefix archv)]
+           else
+             [])
+    in
+    let pre_create_command  =
+      run_hook t
+        ~with_archive_set:(aname, aset, archv_set)
+        ~with_archive:archv
+        "pre_create_command"
+        aset.archive_set_hooks.pre_create_command
+    in
+    let archv_set = ArchiveSet.add archv archv_set in
+    let post_create_command =
+      run_hook t
+        ~with_archive_set:(aname, aset, archv_set)
+        ~with_archive:archv
+        "post_create_command"
+        aset.archive_set_hooks.post_create_command
+    in
+      (aname, archv), pre_create_command, dar_args, post_create_command
+  in
+  let exns, lst =
+    List.fold_left
+      (fun (exns, lst) (aname, aset, archv_set) ->
+         try
+           exns, create_one aname aset archv_set :: lst
+         with
+           | e ->
+               begin
+                 match e with
+                 | ArchiveSet.MissingFullArchive ->
+                     logf t `Error
+                       "%s: cannot find a single full archive."
+                       (archive_set_id aname)
+                 | Failure txt ->
+                     logf t `Error
+                       "%s: %s" (archive_set_id aname) txt
+                 | e ->
+                     logf t `Error
+                       "%s: %s" (archive_set_id aname) (Printexc.to_string e)
+               end;
+               e :: exns, lst)
+      ([], []) (load_archive_sets t)
   in
   let pre_cmd =
     run_hook t "pre_create_command" t.global_hooks.pre_create_command
@@ -743,19 +816,35 @@ let create t =
     run_hook t "post_create_command" t.global_hooks.post_create_command
   in
 
-  (* Invoke dar for each archive_set. *)
-  pre_cmd ();
-  List.iter
-    (fun ((aname, _), pre_cmd, dar_args, post_cmd) ->
-       pre_cmd ();
-       logf t `Info "Creating dar archive with command %S."
-         (Command.string_of_exec t.dar dar_args);
-       t.exec (command_default t) t.dar dar_args;
-       post_cmd ())
-    lst;
-  post_cmd ();
-
-  List.map (fun (fst, _, _, _) -> fst) lst
+  let exns =
+    (* Invoke dar for each archive_set. *)
+    pre_cmd ();
+    List.fold_left
+      (fun exns ((aname, _), pre_cmd, dar_args, post_cmd) ->
+         try
+           pre_cmd ();
+           logf t `Info "Creating dar archive with command %S."
+             (Command.string_of_exec t.dar dar_args);
+           t.exec (command_default t) t.dar dar_args;
+           post_cmd ();
+           exns
+         with e ->
+           begin
+             match e with
+             | Failure txt ->
+                 logf t `Error "%s: %s" (archive_set_id aname) txt;
+             | e ->
+                 logf t `Error
+                   "%s: %s" (archive_set_id aname) (Printexc.to_string e);
+           end;
+           e :: exns)
+      exns lst
+  in
+    post_cmd ();
+    match exns with
+    | [] -> List.map (fun (fst, _, _, _) -> fst) lst
+    | [e] -> raise e
+    | _ :: _ -> failwith "Multiple errors during execution."
 
 
 let clean t =
