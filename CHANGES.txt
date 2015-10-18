@@ -1,3 +1,12 @@
+2015-10-18  Sylvain Le Gall <sylvain AT le-gall.net>
+
+    * Version 0.0.4
+    * Allow to produce and use inline catalogs for dar (use_catalog=true).
+    * Allow to only produce incremental archives (always_incremental=true).
+    * Misc:
+      * Fix negative number of archive to remove in the info log.
+      * Refactor test suite to make it easier to read.
+
 2015-10-14  Sylvain Le Gall <sylvain AT le-gall.net>
 
     * Version 0.0.3
