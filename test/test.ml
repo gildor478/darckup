@@ -455,11 +455,23 @@ let test_catalog test_ctxt =
     create_ignore_result !t;
     (* Make sure that only the catalog will be used for incremental. *)
     rm [in_tmpdir ["srv"; "backup"; "foobar_20150926_full.1.dar"]];
-    create_ignore_result !t;
+    create_ignore_result (T.set_now_rfc3339 t "20150927");
     assert_equal_dir_list
       ["foobar_20150926_full_catalog.1.dar";
        "foobar_20150926_incr01.1.dar";
        "foobar_20150926_incr01_catalog.1.dar"]
+      (in_tmpdir ["srv"; "backup"]);
+    create_ignore_result (T.set_now_rfc3339 t "20150928");
+    create_ignore_result (T.set_now_rfc3339 t "20150929");
+    create_ignore_result (T.set_now_rfc3339 t "20150930");
+    clean !t;
+    assert_equal_dir_list
+      ["foobar_20150928_full.1.dar";
+       "foobar_20150928_full_catalog.1.dar";
+       "foobar_20150928_incr01.1.dar";
+       "foobar_20150928_incr01_catalog.1.dar";
+       "foobar_20150930_full.1.dar";
+       "foobar_20150930_full_catalog.1.dar"]
       (in_tmpdir ["srv"; "backup"]);
     ()
 
