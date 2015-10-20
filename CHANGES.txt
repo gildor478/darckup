@@ -1,3 +1,8 @@
+2015-10-20  Sylvain Le Gall <sylvain AT le-gall.net>
+
+    * Version 0.0.5
+    * Flush stderr when logging.
+
 2015-10-18  Sylvain Le Gall <sylvain AT le-gall.net>
 
     * Version 0.0.4

@@ -133,7 +133,7 @@ let t ?(asopts=fun _ -> true) copts =
           now_rfc3339 = if_opt t.now_rfc3339 copts.cnow_rfc3339;
           log = (fun lvl s ->
                    if copts.logging_filter lvl then
-                     Printf.eprintf "%c: %s\n"
+                     Printf.eprintf "%c: %s\n%!"
                        (List.assoc lvl
                           [`Debug, 'D';
                            `Info, 'I';
