@@ -1,3 +1,10 @@
+2015-10-22  Sylvain Le Gall <sylvain AT le-gall.net>
+
+    * Version 0.0.6
+    * Use the right order for dar command line options, so that "reference:"
+      section in the dar configuration file will take into account the
+      incremental archive.
+
 2015-10-20  Sylvain Le Gall <sylvain AT le-gall.net>
 
     * Version 0.0.5

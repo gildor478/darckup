@@ -755,9 +755,7 @@ let create t =
     in
     let dar_args =
       let open Command in
-        [A "-c"; Fn (Archive.to_prefix archv); A "-noconf";
-         A "-B"; Fn aset.darrc]
-        @ (match opt_ref_archive with
+        (match opt_ref_archive with
            | Some archv when Archive.has_catalogs archv ->
                [A "-A"; Fn (Archive.to_catalog_prefix archv)]
            | Some archv ->
@@ -768,6 +766,8 @@ let create t =
              [A "--on-fly-isolate"; Fn (Archive.to_catalog_prefix archv)]
            else
              [])
+        @ [A "-c"; Fn (Archive.to_prefix archv); A "-noconf";
+           A "-B"; Fn aset.darrc]
     in
     let pre_create_command  =
       run_hook t

@@ -529,6 +529,32 @@ let test_always_incremental test_ctxt =
     ()
 
 
+let test_encrypted test_ctxt =
+  let open FileUtil in
+  let tmpdir, in_tmpdir, write_file = setup_filesystem test_ctxt in
+  let () =
+    (* Create etc/darckup.ini. *)
+    write_file ["etc"; "darckup.ini"]
+      (Examples.default ^ Examples.archive_set_foobar);
+    (* Create etc/foobar.darrc. *)
+    write_file ["etc"; "foobar.darrc"]
+      (Examples.darrc ^
+       "create:
+        -K 1234
+        reference:
+        -J 1234
+       ");
+  in
+  let t = T.create test_ctxt in_tmpdir in
+    create_ignore_result !t;
+    create_ignore_result !t;
+    assert_equal_dir_list
+      ["foobar_20150926_full.1.dar";
+       "foobar_20150926_incr01.1.dar"]
+      (in_tmpdir ["srv"; "backup"]);
+    ()
+
+
 let tests =
   [
     "ArchiveSet" >:: test_archive_set;
@@ -536,6 +562,7 @@ let tests =
     "Executable" >:: test_executable;
     "Catalog" >:: test_catalog;
     "AlwaysIncremental" >:: test_always_incremental;
+    "Encrypted" >:: test_encrypted;
   ]
 
 
