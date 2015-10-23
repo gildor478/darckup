@@ -526,6 +526,16 @@ let test_always_incremental test_ctxt =
       ["foobar_20150926_full_catalog.1.dar";
        "foobar_20150926_incr01.1.dar"]
       (in_tmpdir ["srv"; "backup"]);
+    create_ignore_result !t; clean !t;
+    create_ignore_result !t; clean !t;
+    create_ignore_result !t; clean !t;
+    create_ignore_result !t; clean !t;
+    create_ignore_result !t; clean !t;
+    assert_equal_dir_list
+      ["foobar_20150926_full_catalog.1.dar";
+       "foobar_20150926_incr05.1.dar";
+       "foobar_20150926_incr06.1.dar"]
+      (in_tmpdir ["srv"; "backup"]);
     ()
 
 
