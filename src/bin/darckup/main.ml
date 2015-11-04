@@ -27,6 +27,7 @@ type copts =
     cdry_run: bool;
     cdar: string option;
     cnow_rfc3339: string option;
+    cno_terminal: bool;
     ini: filename;
     ini_d: filename;
   }
@@ -130,6 +131,7 @@ let t ?(asopts=fun _ -> true) copts =
           archive_sets = List.filter (fun  (s, _) -> asopts s) t.archive_sets;
           dar = if_opt t.dar copts.cdar;
           dry_run = copts.cdry_run;
+          no_terminal = copts.cno_terminal;
           now_rfc3339 = if_opt t.now_rfc3339 copts.cnow_rfc3339;
           log = (fun lvl s ->
                    if copts.logging_filter lvl then
@@ -185,6 +187,7 @@ let clean copts asopts =
 
 
 let cronjob copts asopts =
+  let copts = {copts with cno_terminal = true} in
   match create copts asopts with
   | `Ok () -> clean copts asopts
   |  res -> res
@@ -242,18 +245,23 @@ let copts_t =
     let doc = "Directory containing INI files to load for configuration." in
       Arg.(value & opt dir Conf.ini_d & info ["ini_d"] ~docs ~doc)
   in
-  let copts logging_filter dry_run dar now_rfc3339 ini ini_d =
+  let no_terminal =
+    let doc = "No terminal available for user interaction." in
+      Arg.(value & flag & info ["no_terminal"] ~docs ~doc)
+  in
+  let copts logging_filter dry_run dar now_rfc3339 ini ini_d no_terminal =
     {
       logging_filter;
       cdry_run = dry_run;
       cdar = dar;
       cnow_rfc3339 = now_rfc3339;
+      cno_terminal = no_terminal;
       ini;
       ini_d
     }
   in
     Term.(pure copts $ logging_filter $ dry_run $ dar
-            $ now_rfc3339 $ ini $ ini_d)
+            $ now_rfc3339 $ ini $ ini_d $ no_terminal)
 
 
 (*

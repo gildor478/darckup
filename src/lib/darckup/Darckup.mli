@@ -183,6 +183,10 @@ type t = {
     *)
   ignore_glob_files: string list;
 
+  (** No terminal available (typ. when running as a cronjob).
+    *)
+  no_terminal: bool;
+
   (** Global hooks to run.
     *)
   global_hooks: hooks;

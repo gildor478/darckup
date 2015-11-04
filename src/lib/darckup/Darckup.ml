@@ -299,6 +299,7 @@ type t = {
   now_rfc3339: string;
   dry_run: bool;
   ignore_glob_files: string list;
+  no_terminal: bool;
   global_hooks: hooks;
   archive_sets: (string * archive_set) list;
 
@@ -325,6 +326,7 @@ let default =
     dry_run = false;
     global_hooks = default_hooks;
     ignore_glob_files = [];
+    no_terminal = false;
     archive_sets = [];
 
     command = Command.command;
@@ -764,6 +766,10 @@ let create t =
                [])
         @ (if aset.create_catalog then
              [A "--on-fly-isolate"; Fn (Archive.to_catalog_prefix archv)]
+           else
+             [])
+        @ (if t.no_terminal then
+             [A "-Q"]
            else
              [])
         @ [A "-c"; Fn (Archive.to_prefix archv); A "-noconf";
