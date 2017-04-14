@@ -108,9 +108,9 @@ headache:
 # Deploy target
 #  Deploy/release the software.
 
-OASIS2DEBIAN_ARGS=--distribution wheezy \
+OASIS2DEBIAN_ARGS=--distribution jessie \
 		--executable-name darckup \
-		--executable-extra-depends dar 
+		--executable-extra-depends dar
 
 deploy:
 	admin-gallu-deploy --verbose \
