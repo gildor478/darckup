@@ -3,4 +3,5 @@ S test/**
 B _build/src/**
 B _build/test/**
 PKG oUnit
+PKG cmdliner
 FLG -w +a-4-44

@@ -68,7 +68,7 @@ let help copts man_format cmds topic =
         | `Ok t when List.mem t cmds -> `Help (man_format, Some t)
         | `Ok t ->
             let page =
-              (String.uppercase ("darckup-"^topic), 7, "",
+              (String.uppercase_ascii ("darckup-"^topic), 7, "",
                "Darckup "^Conf.version,
                "Darckup Manual"),
               [`S "HOOK EXECUTION";
@@ -173,17 +173,19 @@ let list_archive copts aset_lst =
 
 
 let create copts asopts =
-  let _lst: (string * Archive.t) list =
-    Darckup.create (t ~asopts copts)
-  in
+  try
+    let _lst: (string * Archive.t) list = Darckup.create (t ~asopts copts) in
     `Ok ()
+  with _ ->
+    `Error (false, "some errors have occured")
 
 
 let clean copts asopts =
-  let () =
-    Darckup.clean (t ~asopts copts)
-  in
+  try
+    Darckup.clean (t ~asopts copts);
     `Ok ()
+  with _ ->
+    `Error (false, "some errors have occured")
 
 
 let cronjob copts asopts =
