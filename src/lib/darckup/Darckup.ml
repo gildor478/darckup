@@ -579,12 +579,12 @@ let load_archive_sets t =
       StringMap.empty t.archive_sets
   in
 
-  let is_ignored =
+  let is_ignored bn =
     let open Re in
     let re =
       compile (alt (List.map Re_glob.glob t.ignore_glob_files))
     in
-      execp re
+      execp re bn
   in
 
   let process_backup_dir backup_dir archive_sets map_names =
@@ -625,7 +625,7 @@ let load_archive_sets t =
       (* Group filenames from the backup directory per known prefix. *)
       Array.iter test_assign (t.readdir backup_dir);
       List.fold_left
-        (fun (i, map_names) (aname, aset) ->
+        (fun (i, map_names) (aname, _) ->
            let archv, lst =
              List.iter
                (fun fn ->
@@ -674,7 +674,7 @@ let variables =
     "archive prefix of the archive currently processed.";
 
     "all_archive_sets",
-    `All (fun t -> (*TODO *) ""),
+    `All (fun _ -> (*TODO *) ""),
     "all available archive_sets.";
   ]
 
@@ -727,7 +727,7 @@ let run_hook t ?with_archive_set ?with_archive fname cmd_opt =
            na ()
        | `CurrentArchive f, _, Some archv ->
            f t archv
-       | `CurrentArchive f, _, None ->
+       | `CurrentArchive _, _, None ->
            na ()
        | `All f, _, _ ->
            f t
@@ -823,6 +823,16 @@ let create t =
   let post_cmd =
     run_hook t "post_create_command" t.global_hooks.post_create_command
   in
+  let command_exit11_verbose cmd =
+    let open Command in
+    let out = ref [] in
+    {cmd with
+     errf = (fun s -> out := s :: !out; cmd.errf s);
+     outf = (fun s -> out := s :: !out; cmd.outf s);
+     exitf = (fun s i ->
+         if i = 11 then List.iter (logf t `Error "%s") (List.rev !out);
+         cmd.exitf s i)}
+  in
 
   let exns =
     (* Invoke dar for each archive_set. *)
@@ -833,7 +843,7 @@ let create t =
            pre_cmd ();
            logf t `Info "Creating dar archive with command %S."
              (Command.string_of_exec t.dar dar_args);
-           t.exec (command_default t) t.dar dar_args;
+           t.exec (command_exit11_verbose (command_default t)) t.dar dar_args;
            post_cmd ();
            exns
          with e ->

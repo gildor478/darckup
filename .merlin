@@ -4,4 +4,8 @@ B _build/src/**
 B _build/test/**
 PKG oUnit
 PKG cmdliner
+PKG re
+PKG fileutils
+PKG calendar
+PKG inifiles
 FLG -w +a-4-44
