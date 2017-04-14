@@ -25,11 +25,13 @@ Description:
 Library command
   Path:         src/lib/command
   Modules:      Command
+  CompiledObject: byte
   BuildDepends: unix
 
 Library darckup
   Path:       src/lib/darckup
   Modules:    Darckup
+  CompiledObject: byte
   BuildDepends:
     re (>= 1.1.0), re.pcre, re.glob,
     inifiles (>= 1.2),
@@ -41,6 +43,7 @@ Library darckup
 Executable darckup
   Path:         src/bin/darckup
   MainIs:       main.ml
+  CompiledObject: byte
   BuildDepends: darckup, cmdliner
 
 #
