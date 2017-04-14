@@ -68,7 +68,7 @@ let help copts man_format cmds topic =
         | `Ok t when List.mem t cmds -> `Help (man_format, Some t)
         | `Ok t ->
             let page =
-              (String.uppercase_ascii ("darckup-"^topic), 7, "",
+              (String.uppercase ("darckup-"^topic), 7, "",
                "Darckup "^Conf.version,
                "Darckup Manual"),
               [`S "HOOK EXECUTION";
