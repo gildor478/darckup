@@ -56,7 +56,7 @@ struct
   let to_prefix t =
     match t.kind with
     | Full -> t.short_prefix ^ "_full"
-    | Incremental n -> Printf.sprintf "%s_incr%02d" t.short_prefix n
+    | Incremental n -> Printf.sprintf "%s_incr%05d" t.short_prefix n
 
   let to_catalog_prefix t =
     (to_prefix t)^"_catalog"
@@ -123,6 +123,18 @@ struct
            catalogs = mp_merge t1.catalogs t2.catalogs}
     else
       invalid_arg (to_prefix t2)
+
+  let compare t1 t2 =
+    match String.compare t1.short_prefix t2.short_prefix with
+    | 0 ->
+      begin
+        match t1.kind, t2.kind with
+        | Full, Incremental _ -> -1
+        | Full, Full -> 0
+        | Incremental _, Full -> 1
+        | Incremental n1, Incremental n2 -> n1 - n2
+      end
+    | n -> n
 end
 
 module ArchiveSet =
@@ -135,19 +147,14 @@ struct
          | MissingFullArchive -> Some "MissingFullArchive"
          | _ -> None)
 
-  module M =
-    Map.Make
-      (struct
-         type t = string
-         let compare = String.compare
-       end)
+  module M = Set.Make(Archive)
 
-  type t = Archive.t M.t
+  type t = M.t
 
   let add archv t =
     let open Archive in
-    let k = to_prefix archv in
-      M.add k (try merge (M.find k t) archv with Not_found -> archv) t
+    let archv' = try merge (M.find archv t) archv with Not_found -> archv in
+    M.add archv' (M.remove archv t)
 
   let remove archv t =
     t (* TODO *)
@@ -164,20 +171,15 @@ struct
   let to_filenames t =
     List.rev
       (M.fold
-         (fun _ archv l -> List.rev_append (Archive.to_filenames archv) l)
+         (fun archv l -> List.rev_append (Archive.to_filenames archv) l)
          t [])
 
   let length = M.cardinal
 
-  let last t =
-    try
-      snd (M.max_binding t)
-    with Not_found ->
-      raise MissingFullArchive
+  let last t = try M.max_elt t with Not_found -> raise MissingFullArchive
 
   let last_full t =
-    last (M.filter (fun _ archv -> Archive.is_full archv) t)
-
+    last (M.filter (fun archv -> Archive.is_full archv) t)
 
   let next t max_incremental short_prefix =
     let open Archive in
@@ -240,10 +242,10 @@ struct
       archv, opt_ref_archv
 
   let rec pop t =
-    let prefix, archv = M.min_binding t in
-    let t = M.remove prefix t in
+    let archv = M.min_elt t in
+    let t = M.remove archv t in
       if not (M.is_empty t) && Archive.is_full archv then begin
-        match snd (M.min_binding t) with
+        match M.min_elt t with
         | {Archive.kind = Archive.Incremental _} as archv'
             when Archive.in_same_group archv archv' ->
             let t, archv' = pop t in add archv t, archv'

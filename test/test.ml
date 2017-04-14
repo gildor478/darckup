@@ -103,6 +103,18 @@ let assert_bigger_size fn1 fn2 =
       (stat fn1).size (stat fn2).size
 
 
+let assert_equal_next exp (got_archv, got_opt_ref_archv) =
+  assert_equal
+    ~msg:"ArchiveSet.next"
+    ~printer:(fun (s, os) ->
+                s^", "^match os with None -> "<none>" | Some s -> s)
+    exp
+    (Archive.to_prefix got_archv,
+     match got_opt_ref_archv with
+     | None -> None
+     | Some archv -> Some (Archive.to_prefix archv))
+
+
 let test_archive_set test_ctxt =
   let files =
       [
@@ -115,17 +127,6 @@ let test_archive_set test_ctxt =
         "foobar_20150905_full.1.dar";
         "foobar_20150905_incr1.1.dar";
       ]
-  in
-  let assert_equal_next exp (got_archv, got_opt_ref_archv) =
-    assert_equal
-      ~msg:"ArchiveSet.next"
-      ~printer:(fun (s, os) ->
-                  s^", "^match os with None -> "<none>" | Some s -> s)
-      exp
-      (Archive.to_prefix got_archv,
-       match got_opt_ref_archv with
-       | None -> None
-       | Some archv -> Some (Archive.to_prefix archv))
   in
   let set, bad =
     (* of_filenames *)
@@ -171,7 +172,7 @@ let test_archive_set test_ctxt =
       ("foobar_20150907_full", None)
       (ArchiveSet.next set (Some 1) "foobar_20150907");
     assert_equal_next
-      ("foobar_20150905_incr02", Some "foobar_20150905_full")
+      ("foobar_20150905_incr00002", Some "foobar_20150905_full")
       (ArchiveSet.next set (Some 2) "foobar_20150907");
     begin
       try
@@ -185,6 +186,34 @@ let test_archive_set test_ctxt =
 
     ()
 
+
+let test_archive_set_transition test_ctxt =
+  let files =
+      [
+        "foobar_20150831_full.1.dar";
+        "foobar_20150831_incr_1.1.dar";
+        "foobar_20150831_incr_2.1.dar";
+        "foobar_20150831_incr_3.1.dar";
+        "foobar_20150831_incr_4.1.dar";
+        "foobar_20150831_incr_99.1.dar";
+      ]
+  in
+  (* of_filenames *)
+  let set, bad = ArchiveSet.of_filenames (List.rev files) in
+  let () =
+    StringListDiff.assert_equal [] bad;
+    StringListDiff.assert_equal files (ArchiveSet.to_filenames set);
+    assert_equal_next
+      ("foobar_20150831_incr00100", Some "foobar_20150831_full")
+      (ArchiveSet.next set None "foobar_20150907")
+  in
+  let files' = files @ ["foobar_20150831_incr_00100.1.dar"] in
+  let set', bad' = ArchiveSet.of_filenames (List.rev files') in
+    StringListDiff.assert_equal [] bad';
+    StringListDiff.assert_equal files' (ArchiveSet.to_filenames set');
+    assert_equal_next
+      ("foobar_20150831_incr00101", Some "foobar_20150831_full")
+      (ArchiveSet.next set' None "foobar_20150907")
 
 module T =
 struct
@@ -297,15 +326,15 @@ let test_load_clean_create test_ctxt =
   let tmpdir, in_tmpdir, write_file = setup_filesystem test_ctxt in
   let create_current_files =
     comb "foobar_201509"
-      [ ["26"; "29"]; ["_full"; "_incr01"; "_incr02"]; [".1.dar"; ".done"]]
+      [ ["26"; "29"]; ["_full"; "_incr00001"; "_incr00002"]; [".1.dar"; ".done"]]
       (comb "barbaz_201509"
-         [["26"; "28"; "30"]; ["_full"; "_incr01"]; [".1.dar"]] [])
+         [["26"; "28"; "30"]; ["_full"; "_incr00001"]; [".1.dar"]] [])
   in
   let clean_current_files =
     comb "foobar_201509"
-      [ ["29"]; ["_full"; "_incr01"; "_incr02"]; [".1.dar"; ".done"]]
+      [ ["29"]; ["_full"; "_incr00001"; "_incr00002"]; [".1.dar"; ".done"]]
       (comb "barbaz_201509"
-         [["30"]; ["_full"; "_incr01"]; [".1.dar"]]
+         [["30"]; ["_full"; "_incr00001"]; [".1.dar"]]
          ["barbaz_20150928_full.1.dar"])
   in
   let () =
@@ -374,15 +403,15 @@ let test_load_clean_create test_ctxt =
     assert_equal_dir_list
       ["foobar_20150926_full.1.dar";
        "foobar_20150926_full.done";
-       "foobar_20150926_incr01.1.dar";
-       "foobar_20150926_incr01.done";
+       "foobar_20150926_incr00001.1.dar";
+       "foobar_20150926_incr00001.done";
 
        "barbaz_20150926_full.1.dar";
-       "barbaz_20150926_incr01.1.dar"]
+       "barbaz_20150926_incr00001.1.dar"]
       (in_tmpdir ["srv"; "backup"]);
     assert_bigger_size
       (in_tmpdir ["srv"; "backup"; "foobar_20150926_full.1.dar"])
-      (in_tmpdir ["srv"; "backup"; "foobar_20150926_incr01.1.dar"]);
+      (in_tmpdir ["srv"; "backup"; "foobar_20150926_incr00001.1.dar"]);
 
     (* Simulate a few days run. *)
     create_ignore_result (T.set_now_rfc3339 t "20150928");
@@ -435,7 +464,7 @@ let test_executable test_ctxt =
     assert_equal_dir_list
       ["foobar_20150929_full.1.dar";
        "foobar_20151001_full.1.dar";
-       "foobar_20151001_incr01.1.dar"]
+       "foobar_20151001_incr00001.1.dar"]
       (in_tmpdir ["srv"; "backup"]);
     ()
 
@@ -458,8 +487,8 @@ let test_catalog test_ctxt =
     create_ignore_result (T.set_now_rfc3339 t "20150927");
     assert_equal_dir_list
       ["foobar_20150926_full_catalog.1.dar";
-       "foobar_20150926_incr01.1.dar";
-       "foobar_20150926_incr01_catalog.1.dar"]
+       "foobar_20150926_incr00001.1.dar";
+       "foobar_20150926_incr00001_catalog.1.dar"]
       (in_tmpdir ["srv"; "backup"]);
     create_ignore_result (T.set_now_rfc3339 t "20150928");
     create_ignore_result (T.set_now_rfc3339 t "20150929");
@@ -468,8 +497,8 @@ let test_catalog test_ctxt =
     assert_equal_dir_list
       ["foobar_20150928_full.1.dar";
        "foobar_20150928_full_catalog.1.dar";
-       "foobar_20150928_incr01.1.dar";
-       "foobar_20150928_incr01_catalog.1.dar";
+       "foobar_20150928_incr00001.1.dar";
+       "foobar_20150928_incr00001_catalog.1.dar";
        "foobar_20150930_full.1.dar";
        "foobar_20150930_full_catalog.1.dar"]
       (in_tmpdir ["srv"; "backup"]);
@@ -524,7 +553,7 @@ let test_always_incremental test_ctxt =
     create_ignore_result !t;
     assert_equal_dir_list
       ["foobar_20150926_full_catalog.1.dar";
-       "foobar_20150926_incr01.1.dar"]
+       "foobar_20150926_incr00001.1.dar"]
       (in_tmpdir ["srv"; "backup"]);
     create_ignore_result !t; clean !t;
     create_ignore_result !t; clean !t;
@@ -533,8 +562,8 @@ let test_always_incremental test_ctxt =
     create_ignore_result !t; clean !t;
     assert_equal_dir_list
       ["foobar_20150926_full_catalog.1.dar";
-       "foobar_20150926_incr05.1.dar";
-       "foobar_20150926_incr06.1.dar"]
+       "foobar_20150926_incr00005.1.dar";
+       "foobar_20150926_incr00006.1.dar"]
       (in_tmpdir ["srv"; "backup"]);
     ()
 
@@ -560,7 +589,7 @@ let test_encrypted test_ctxt =
     create_ignore_result !t;
     assert_equal_dir_list
       ["foobar_20150926_full.1.dar";
-       "foobar_20150926_incr01.1.dar"]
+       "foobar_20150926_incr00001.1.dar"]
       (in_tmpdir ["srv"; "backup"]);
     ()
 
@@ -568,6 +597,7 @@ let test_encrypted test_ctxt =
 let tests =
   [
     "ArchiveSet" >:: test_archive_set;
+    "ArchiveSetTransition" >:: test_archive_set_transition;
     "load+clean+create" >:: test_load_clean_create;
     "Executable" >:: test_executable;
     "Catalog" >:: test_catalog;
