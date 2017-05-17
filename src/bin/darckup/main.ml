@@ -66,9 +66,9 @@ let help copts man_format cmds topic =
         | `Error e -> `Error (false, e)
         | `Ok t when t = "topics" -> List.iter print_endline topics; `Ok ()
         | `Ok t when List.mem t cmds -> `Help (man_format, Some t)
-        | `Ok t ->
+        | `Ok _ ->
             let page =
-              (String.uppercase ("darckup-"^topic), 7, "",
+              (String.uppercase_ascii ("darckup-"^topic), 7, "",
                "Darckup "^Conf.version,
                "Darckup Manual"),
               [`S "HOOK EXECUTION";
@@ -105,7 +105,7 @@ let help copts man_format cmds topic =
                    current.backup_dir' from the script executed.";
 
                `P "Command line substitution:"; `Noblank;
-               `P "  post_create_command=touch 
+               `P "  post_create_command=touch
                       $(\\$){current.last.prefix}.done";
 
                `P "From a script:"; `Noblank;

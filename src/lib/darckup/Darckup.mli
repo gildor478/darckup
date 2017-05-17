@@ -90,12 +90,13 @@ sig
     *)
   exception MissingFullArchive
 
-  (** [next t max_incremental short_prefix] returns the archive that should be
-      created after the last one and the full archive it should use, in case the
-      next one is an incremental. If [max_incremental] is [None], always return
-      an incremental archive.
+  (** [next t create_initial_archive  max_incremental short_prefix] returns 
+      the archive that should be created after the last one and the full
+      archive it should use, in case the next one is an incremental. If
+      [max_incremental] is [None], always return an incremental archive except
+      if [create_initial_archive] is set.
     *)
-  val next: t -> int option -> filename -> Archive.t * Archive.t option
+  val next: t -> bool -> int option -> filename -> Archive.t * Archive.t option
 
   (** [pop t] returns the archive set without the first element, which is
       returned as well.
@@ -150,6 +151,11 @@ type archive_set = {
        setting.
     *)
   max_incrementals: int option;
+
+  (** Whether or not create an initial full archive when always_incremental is
+      set.
+    *)
+  create_initial_archive: bool;
 
   (** Maximal number of archives (clean).
     *)

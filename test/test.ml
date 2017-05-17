@@ -98,7 +98,7 @@ let assert_equal_dir_list lst dn =
 let assert_bigger_size fn1 fn2 =
   let open FileUtil in
     assert_equal
-      ~printer:string_of_size
+      ~printer:(fun s -> string_of_size s)
       ~cmp:(fun sz1 sz2 -> size_compare sz1 sz2 > 0)
       (stat fn1).size (stat fn2).size
 
@@ -115,7 +115,7 @@ let assert_equal_next exp (got_archv, got_opt_ref_archv) =
      | Some archv -> Some (Archive.to_prefix archv))
 
 
-let test_archive_set test_ctxt =
+let test_archive_set _ =
   let files =
       [
         "foobar_20150831_full.1.dar";
@@ -170,13 +170,13 @@ let test_archive_set test_ctxt =
     (* next *)
     assert_equal_next
       ("foobar_20150907_full", None)
-      (ArchiveSet.next set (Some 1) "foobar_20150907");
+      (ArchiveSet.next set false (Some 1) "foobar_20150907");
     assert_equal_next
       ("foobar_20150905_incr00002", Some "foobar_20150905_full")
-      (ArchiveSet.next set (Some 2) "foobar_20150907");
+      (ArchiveSet.next set false (Some 2) "foobar_20150907");
     begin
       try
-        let _, _ = ArchiveSet.next set (Some 1) "foobar_20150904" in
+        let _, _ = ArchiveSet.next set false (Some 1) "foobar_20150904" in
           assert_failure
             "ArchiveSet.next create an archive that will not be the \
              last one."
@@ -187,7 +187,7 @@ let test_archive_set test_ctxt =
     ()
 
 
-let test_archive_set_transition test_ctxt =
+let test_archive_set_transition _ =
   let files =
       [
         "foobar_20150831_full.1.dar";
@@ -205,7 +205,7 @@ let test_archive_set_transition test_ctxt =
     StringListDiff.assert_equal files (ArchiveSet.to_filenames set);
     assert_equal_next
       ("foobar_20150831_incr00100", Some "foobar_20150831_full")
-      (ArchiveSet.next set None "foobar_20150907")
+      (ArchiveSet.next set false None "foobar_20150907")
   in
   let files' = files @ ["foobar_20150831_incr_00100.1.dar"] in
   let set', bad' = ArchiveSet.of_filenames (List.rev files') in
@@ -213,7 +213,7 @@ let test_archive_set_transition test_ctxt =
     StringListDiff.assert_equal files' (ArchiveSet.to_filenames set');
     assert_equal_next
       ("foobar_20150831_incr00101", Some "foobar_20150831_full")
-      (ArchiveSet.next set' None "foobar_20150907")
+      (ArchiveSet.next set' false None "foobar_20150907")
 
 module T =
 struct
@@ -443,7 +443,7 @@ let test_load_clean_create test_ctxt =
 
 
 let test_executable test_ctxt =
-  let tmpdir, in_tmpdir, write_file = setup_filesystem test_ctxt in
+  let _, in_tmpdir, write_file = setup_filesystem test_ctxt in
   let darckup cmd now_rfc3339 args =
     assert_command ~ctxt:test_ctxt (darckup_exec test_ctxt)
       ([cmd; "--verbose";
@@ -470,7 +470,7 @@ let test_executable test_ctxt =
 
 let test_catalog test_ctxt =
   let open FileUtil in
-  let tmpdir, in_tmpdir, write_file = setup_filesystem test_ctxt in
+  let _, in_tmpdir, write_file = setup_filesystem test_ctxt in
   let () =
     (* Create etc/darckup.ini. *)
     write_file ["etc"; "darckup.ini"]
@@ -507,7 +507,7 @@ let test_catalog test_ctxt =
 
 let test_always_incremental test_ctxt =
   let open FileUtil in
-  let tmpdir, in_tmpdir, write_file = setup_filesystem test_ctxt in
+  let _, in_tmpdir, write_file = setup_filesystem test_ctxt in
   let () =
     (* Create etc/darckup.ini. *)
     write_file ["etc"; "darckup.ini"]
@@ -527,14 +527,13 @@ let test_always_incremental test_ctxt =
       ArchiveSet.MissingFullArchive
       (fun () ->
          create_ignore_result
-           {!t
-              with
-                  log =
-                    (fun lvl s ->
-                       if lvl = `Error then
-                         has_error_log := true
-                       else
-                         !t.log lvl s)});
+           {!t with
+            log =
+              (fun lvl s ->
+                 if lvl = `Error then
+                   has_error_log := true
+                 else
+                   !t.log lvl s)});
     assert_bool
       "At least one error emitted."
       !has_error_log;
@@ -568,9 +567,28 @@ let test_always_incremental test_ctxt =
     ()
 
 
+let test_always_incremental_allow_first test_ctxt =
+  let _, in_tmpdir, write_file = setup_filesystem test_ctxt in
+  let () =
+    (* Create etc/darckup.ini. *)
+    write_file ["etc"; "darckup.ini"]
+      (Examples.default
+       ^ Examples.archive_set_foobar
+       ^ "always_incremental=true\n"
+       ^ "create_initial_archive=true\n");
+    (* Create etc/foobar.darrc. *)
+    write_file ["etc"; "foobar.darrc"] Examples.darrc;
+  in
+  let t = T.create test_ctxt in_tmpdir in
+  create_ignore_result !t;
+  assert_equal_dir_list
+    ["foobar_20150926_full.1.dar"]
+    (in_tmpdir ["srv"; "backup"]);
+    ()
+
+
 let test_encrypted test_ctxt =
-  let open FileUtil in
-  let tmpdir, in_tmpdir, write_file = setup_filesystem test_ctxt in
+  let _, in_tmpdir, write_file = setup_filesystem test_ctxt in
   let () =
     (* Create etc/darckup.ini. *)
     write_file ["etc"; "darckup.ini"]
@@ -602,6 +620,7 @@ let tests =
     "Executable" >:: test_executable;
     "Catalog" >:: test_catalog;
     "AlwaysIncremental" >:: test_always_incremental;
+    "AlwaysIncrementalAllowFirst" >:: test_always_incremental_allow_first;
     "Encrypted" >:: test_encrypted;
   ]
 

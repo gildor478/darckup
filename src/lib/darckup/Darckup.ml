@@ -181,7 +181,7 @@ struct
   let last_full t =
     last (M.filter (fun archv -> Archive.is_full archv) t)
 
-  let next t max_incremental short_prefix =
+  let next t create_initial_archive max_incrementals short_prefix =
     let open Archive in
     let make archv =
       {archv with
@@ -209,7 +209,7 @@ struct
         Some full
     in
     let archv, opt_ref_archv =
-      match max_incremental with
+      match max_incrementals with
       | Some d ->
           begin
             if d <= 0 || length t = 0 then begin
@@ -227,9 +227,15 @@ struct
           end
       | None ->
           begin
-            match last t with
-            | { kind = Full } -> incremental 1
-            | { kind = Incremental n } -> incremental (n + 1)
+            try
+              match last t with
+              | { kind = Full } -> incremental 1
+              | { kind = Incremental n } -> incremental (n + 1)
+            with MissingFullArchive as e ->
+              if create_initial_archive then
+                full ()
+              else
+                raise e
           end
     in
       if not (length t = 0) && (last (add archv t)) <> archv then
@@ -286,6 +292,7 @@ type archive_set = {
   darrc: filename;
   base_prefix: string;
   max_incrementals: int option;
+  create_initial_archive: bool;
   max_archives: int;
   create_catalog: bool;
   archive_set_hooks: hooks
@@ -475,6 +482,7 @@ let load_one_configuration t fn =
                    max_incrementals = Some 6;
                    max_archives = 30;
                    create_catalog = false;
+                   create_initial_archive = false;
                  }
              in
              let max_incrementals =
@@ -513,6 +521,9 @@ let load_one_configuration t fn =
                  create_catalog =
                    get ~default:aset.create_catalog bool_of_string
                      sect "create_catalog";
+                 create_initial_archive =
+                   get ~default:aset.create_initial_archive bool_of_string
+                     sect "create_initial_archive";
                  max_incrementals;
                }
              in
@@ -753,7 +764,9 @@ let run_hook t ?with_archive_set ?with_archive fname cmd_opt =
 let create t =
   let create_one aname aset archv_set =
     let archv, opt_ref_archive =
-      ArchiveSet.next archv_set aset.max_incrementals
+      ArchiveSet.next archv_set
+        aset.create_initial_archive
+        aset.max_incrementals
         (Filename.concat
            aset.backup_dir (aset.base_prefix ^ "_" ^ t.now_rfc3339))
     in
