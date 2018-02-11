@@ -41,10 +41,10 @@ Library darckup
     calendar (>= 2.03)
 
 Executable darckup
-  Path:         src/bin/darckup
-  MainIs:       main.ml
-  CompiledObject: byte
-  BuildDepends: darckup, cmdliner
+  Path:           src/bin/darckup
+  MainIs:         main.ml
+  CompiledObject: best
+  BuildDepends:   darckup, cmdliner
 
 #
 # Documentation
