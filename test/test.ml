@@ -448,7 +448,7 @@ let test_executable test_ctxt =
     assert_command ~ctxt:test_ctxt (darckup_exec test_ctxt)
       ([cmd; "--verbose";
         "--ini"; in_tmpdir ["etc"; "darckup.ini"];
-        "--now_rfc3339"; now_rfc3339] @ args)
+        "--no_ini_d"; "--now_rfc3339"; now_rfc3339] @ args)
   in
     (* Create etc/darckup.ini. *)
     write_file ["etc"; "darckup.ini"]

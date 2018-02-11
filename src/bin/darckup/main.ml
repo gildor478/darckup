@@ -29,7 +29,7 @@ type copts =
     cnow_rfc3339: string option;
     cno_terminal: bool;
     ini: filename;
-    ini_d: filename;
+    ini_d: filename option;
   }
 
 
@@ -68,7 +68,7 @@ let help copts man_format cmds topic =
         | `Ok t when List.mem t cmds -> `Help (man_format, Some t)
         | `Ok _ ->
             let page =
-              (String.uppercase ("darckup-"^topic), 7, "",
+              (String.uppercase_ascii ("darckup-"^topic), 7, "",
                "Darckup "^Conf.version,
                "Darckup Manual"),
               [`S "HOOK EXECUTION";
@@ -123,7 +123,7 @@ let help copts man_format cmds topic =
 let t ?(asopts=fun _ -> true) copts =
   let open Darckup in
   let t =
-    load_configuration default ~dir:copts.ini_d copts.ini
+    load_configuration default ?dir:copts.ini_d copts.ini
   in
   let if_opt e = function Some e -> e | None -> e in
     {
@@ -240,18 +240,31 @@ let copts_t =
       Arg.(value & opt (some string) None & info ["now_rfc3339"] ~docs ~doc)
   in
   let ini =
-    let doc = "INI file to load for configuration." in
+    let doc =
+      "Default INI file to load for configuration, files from --ini_d "
+      ^ "will also be loaded."
+    in
       Arg.(value & opt file Conf.ini & info ["ini"] ~docs ~doc)
   in
   let ini_d =
-    let doc = "Directory containing INI files to load for configuration." in
+    let doc =
+      "Directory containing INI files to load for configuration, --ini file "
+      ^ "will also be loaded." 
+    in
       Arg.(value & opt dir Conf.ini_d & info ["ini_d"] ~docs ~doc)
+  in
+  let no_ini_d =
+    let doc =
+      "Only load a single INI file for configuration, and ignore --ini_d."
+    in
+      Arg.(value & flag & info ["no_ini_d"] ~docs ~doc)
   in
   let no_terminal =
     let doc = "No terminal available for user interaction." in
       Arg.(value & flag & info ["no_terminal"] ~docs ~doc)
   in
-  let copts logging_filter dry_run dar now_rfc3339 ini ini_d no_terminal =
+  let copts
+      logging_filter dry_run dar now_rfc3339 ini ini_d no_ini_d  no_terminal =
     {
       logging_filter;
       cdry_run = dry_run;
@@ -259,11 +272,11 @@ let copts_t =
       cnow_rfc3339 = now_rfc3339;
       cno_terminal = no_terminal;
       ini;
-      ini_d
+      ini_d = if no_ini_d then None else Some ini_d;
     }
   in
     Term.(pure copts $ logging_filter $ dry_run $ dar
-            $ now_rfc3339 $ ini $ ini_d $ no_terminal)
+            $ now_rfc3339 $ ini $ ini_d $ no_ini_d $ no_terminal)
 
 
 (*
