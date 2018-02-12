@@ -156,7 +156,7 @@ let list_archive copts aset_lst =
   let module S = Set.Make(String) in
   let set_of_list =  List.fold_left (fun set a -> S.add a set) S.empty in
   let set = set_of_list aset_lst in
-  let t = t ~asopts:(fun s -> S.mem s set) copts in
+  let t = t copts in
   let set_ref = set_of_list (List.rev_map fst t.archive_sets) in
   let diff = S.diff set set_ref in
     if diff <> S.empty then begin
@@ -166,8 +166,9 @@ let list_archive copts aset_lst =
            (String.concat ", " (S.elements diff)))
     end;
     List.iter
-      (fun (_, _, a) ->
-         List.iter print_endline (ArchiveSet.to_filenames a))
+      (fun (archive_name, _, a) ->
+         if S.mem archive_name set then
+           List.iter print_endline (ArchiveSet.to_filenames a))
       (Darckup.load_archive_sets t);
     `Ok ()
 
@@ -249,7 +250,7 @@ let copts_t =
   let ini_d =
     let doc =
       "Directory containing INI files to load for configuration, --ini file "
-      ^ "will also be loaded." 
+      ^ "will also be loaded."
     in
       Arg.(value & opt dir Conf.ini_d & info ["ini_d"] ~docs ~doc)
   in
