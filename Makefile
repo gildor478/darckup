@@ -108,15 +108,10 @@ headache:
 # Deploy target
 #  Deploy/release the software.
 
-OASIS2DEBIAN_ARGS=--distribution jessie \
-		--executable-name darckup \
-		--executable-extra-depends dar
-
 deploy:
 	admin-gallu-deploy --verbose \
-		--debian_pkg --debuild --distdebuild --debian_upload \
-		--oasis2debian_args "$(OASIS2DEBIAN_ARGS)" \
 		--forge_upload	--forge_group darckup --forge_user gildor-admin
+	deploy-using-oasis
 	admin-gallu-oasis-increment --use_vcs \
 		--setup_run --setup_args '-setup-update dynamic'
 
