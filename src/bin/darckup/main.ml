@@ -152,7 +152,7 @@ let list copts =
   `Ok ()
 
 
-let list_archive copts aset_lst =
+let list_archive copts aset_lst only_catalogs only_volumes =
   let module S = Set.Make(String) in
   let set_of_list =  List.fold_left (fun set a -> S.add a set) S.empty in
   let set = set_of_list aset_lst in
@@ -168,7 +168,10 @@ let list_archive copts aset_lst =
     List.iter
       (fun (archive_name, _, a) ->
          if S.mem archive_name set then
-           List.iter print_endline (ArchiveSet.to_filenames a))
+           List.iter print_endline
+             (ArchiveSet.to_filenames
+                ~catalogs:(not only_volumes)
+                ~volumes:(not only_catalogs) a))
       (Darckup.load_archive_sets t);
     `Ok ()
 
@@ -346,6 +349,14 @@ let list_cmd =
 
 let list_archive_cmd =
   let doc = "List all archives for an archive_set." in
+  let only_catalogs =
+    let doc = "Display only catalogs." in
+    Arg.(value & flag & info ["only_catalogs"] ~doc)
+  in
+  let only_volumes =
+    let doc = "Display only volumes." in
+    Arg.(value & flag & info ["only_volumes"] ~doc)
+  in
   let aset_lst =
     let doc = "The archive_set to list." in
       Arg.(non_empty & pos_all string [] & info [] ~docv:"ARCHIVE_SET" ~doc)
@@ -356,8 +367,10 @@ let list_archive_cmd =
          configuration files."]
     @ help_secs
   in
-    Term.(ret (pure list_archive $ copts_t $ aset_lst)),
-    Term.info "list_archive" ~sdocs:copts_sect ~doc ~man
+  Term.(
+    ret
+      (pure list_archive $ copts_t $ aset_lst $ only_catalogs $ only_volumes)),
+  Term.info "list_archive" ~sdocs:copts_sect ~doc ~man
 
 
 let create_cmd =
@@ -367,8 +380,8 @@ let create_cmd =
      `P "Invoke dar to create archive for the selected archive_sets."]
     @ help_secs
   in
-    Term.(ret (pure create $ copts_t $ asopts_t)),
-    Term.info "create" ~sdocs:copts_sect ~doc ~man
+  Term.(ret (pure create $ copts_t $ asopts_t)),
+  Term.info "create" ~sdocs:copts_sect ~doc ~man
 
 
 let clean_cmd =

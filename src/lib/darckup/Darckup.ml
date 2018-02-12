@@ -39,6 +39,7 @@ type volumes = filename IntMap.t
 module Archive =
 struct
   type kind = Full | Incremental of int
+
   type t =
       {
         short_prefix: string;
@@ -61,10 +62,14 @@ struct
   let to_catalog_prefix t =
     (to_prefix t)^"_catalog"
 
-  let to_filenames t =
-    List.map snd (IntMap.bindings t.volumes)
-    @
-    List.map snd (IntMap.bindings t.catalogs)
+  let to_filenames ?(catalogs=true) ?(volumes=true) t =
+    let stack = Stack.create () in
+    let add_snd_to_stack = List.iter (fun (_, e) -> Stack.push e stack) in
+    if catalogs then
+      add_snd_to_stack (IntMap.bindings t.catalogs);
+    if volumes then
+      add_snd_to_stack (IntMap.bindings t.volumes);
+    Stack.fold (fun lst e -> e :: lst) [] stack
 
   let re =
     let open Re in
@@ -168,10 +173,11 @@ struct
            t, fn :: bad)
       (M.empty, [])
 
-  let to_filenames t =
+  let to_filenames ?catalogs ?volumes t =
     List.rev
       (M.fold
-         (fun archv l -> List.rev_append (Archive.to_filenames archv) l)
+         (fun archv l ->
+            List.rev_append (Archive.to_filenames ?catalogs ?volumes archv) l)
          t [])
 
   let length = M.cardinal

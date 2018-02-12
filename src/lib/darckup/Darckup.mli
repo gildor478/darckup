@@ -50,7 +50,7 @@ sig
 
   (** Return the list of filenames for this archive.
     *)
-  val to_filenames: t -> filename list
+  val to_filenames: ?catalogs:bool -> ?volumes:bool -> t  -> filename list
 
   (** Parse a string to build an archive.
     *)
@@ -76,7 +76,7 @@ sig
 
   (** [to filenames t] returns the sorted list of filename in this archive set.
     *)
-  val to_filenames: t -> filename list
+  val to_filenames: ?catalogs:bool -> ?volumes:bool -> t  -> filename list
 
   (** [lenght] returns the number of archive.
     *)
