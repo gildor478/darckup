@@ -45,6 +45,7 @@ struct
         short_prefix: string;
         volumes: volumes;
         catalogs: volumes;
+        other_filenames: filename list;
         kind: kind;
       }
 
@@ -69,6 +70,7 @@ struct
       add_snd_to_stack (IntMap.bindings t.catalogs);
     if volumes then
       add_snd_to_stack (IntMap.bindings t.volumes);
+    List.iter (fun e -> Stack.push e stack) t.other_filenames;
     Stack.fold (fun lst e -> e :: lst) [] stack
 
   let re =
@@ -83,7 +85,7 @@ struct
                     char '.';
                     group (rep1 digit); (* 4 *)
                     str ".dar";
-                    opt (str ".done");
+                    opt (group (str ".done")); (* 5 *)
                     eol])
 
   let parse s =
@@ -91,6 +93,7 @@ struct
       let substr = Re.exec re s in
       let short_prefix = Re.get substr 1 in
       let is_catalog = Re.test substr 3 in
+      let is_other_filenames = Re.test substr 5 in
       let volume = int_of_string (Re.get substr 4) in
       let kind =
         try
@@ -99,17 +102,23 @@ struct
           Full
       in
       let mp = IntMap.add volume s IntMap.empty in
-      let volumes, catalogs =
-        if is_catalog then IntMap.empty, mp else mp, IntMap.empty
+      let volumes, catalogs, other_filenames =
+        if is_other_filenames then
+          IntMap.empty, IntMap.empty, [s]
+        else if is_catalog then
+          IntMap.empty, mp, []
+        else
+          mp, IntMap.empty, []
       in
-        {
-          short_prefix;
-          volumes;
-          catalogs;
-          kind;
-        }
+      {
+        short_prefix;
+        volumes;
+        catalogs;
+        kind;
+        other_filenames;
+      }
     with Not_found ->
-      invalid_arg s
+      invalid_arg (Printf.sprintf "cannot parse %S as a valid Archive" s)
 
   let merge t1 t2 =
     let open IntMap in
@@ -118,17 +127,23 @@ struct
         (fun _ e1 e2 ->
            match e1, e2 with
              | Some fn1, Some fn2 ->
-                 if fn1 <> fn2 then
-                   invalid_arg fn2;
-                 e1
+               if fn1 <> fn2 then begin
+                 invalid_arg
+                   (Printf.sprintf "cannot merge file %S with %S" fn2 fn1);
+               end;
+               e1
              | None, e | e, None -> e)
     in
     if to_prefix t1 = to_prefix t2 then
       {t1 with
            volumes = mp_merge t1.volumes t2.volumes;
-           catalogs = mp_merge t1.catalogs t2.catalogs}
+           catalogs = mp_merge t1.catalogs t2.catalogs;
+           other_filenames = t1.other_filenames @ t2.other_filenames}
     else
-      invalid_arg (to_prefix t2)
+      invalid_arg
+        (Printf.sprintf
+           "cannot merge the prefix %S with prefix %S"
+           (to_prefix t2) (to_prefix t1))
 
   let compare t1 t2 =
     match String.compare t1.short_prefix t2.short_prefix with
@@ -170,7 +185,8 @@ struct
       (fun (t, bad) fn ->
          try
            add (Archive.parse fn) t, bad
-         with Invalid_argument _ ->
+         with Invalid_argument str ->
+           Printf.eprintf "error: %s\n" str;
            t, fn :: bad)
       (M.empty, [])
 
@@ -201,6 +217,7 @@ struct
           kind = Full;
           volumes = IntMap.empty;
           catalogs = IntMap.empty;
+          other_filenames = [];
         },
       None
     in
@@ -212,6 +229,7 @@ struct
             kind = Incremental n;
             volumes = IntMap.empty;
             catalogs = IntMap.empty;
+            other_filenames = [];
           },
         Some full
     in
@@ -223,21 +241,21 @@ struct
               full ()
             end else begin
               match last t with
-                | { kind = Full } ->
-                    incremental 1
-                | { kind = Incremental n } ->
-                    if n + 1 <= d then
-                      incremental (n + 1)
-                    else
-                      full ()
+              | { kind = Full; _ } ->
+                incremental 1
+              | { kind = Incremental n; _ } ->
+                if n + 1 <= d then
+                  incremental (n + 1)
+                else
+                  full ()
             end
           end
       | None ->
           begin
             try
               match last t with
-              | { kind = Full } -> incremental 1
-              | { kind = Incremental n } -> incremental (n + 1)
+              | { kind = Full; _ } -> incremental 1
+              | { kind = Incremental n; _ } -> incremental (n + 1)
             with MissingFullArchive as e ->
               if create_initial_archive then
                 full ()
@@ -259,7 +277,7 @@ struct
     let t = M.remove archv t in
       if not (M.is_empty t) && Archive.is_full archv then begin
         match M.min_elt t with
-        | {Archive.kind = Archive.Incremental _} as archv'
+        | {Archive.kind = Archive.Incremental _; _} as archv'
             when Archive.in_same_group archv archv' ->
             let t, archv' = pop t in add archv t, archv'
         | _ ->
@@ -617,7 +635,8 @@ let load_archive_sets t =
            (fun (_, aset) -> group (seq [str aset.base_prefix; rep any]))
            archive_sets
        in
-         compile (seq [alt groups; rep any; str ".dar"; eol])
+       compile
+         (seq [alt groups; rep any; str ".dar"; (opt (str ".done")); eol])
     in
     let test_assign bn =
       if not (is_ignored bn) then begin

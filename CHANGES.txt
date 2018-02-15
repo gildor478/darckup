@@ -1,3 +1,8 @@
+2018-02-16  Sylvain Le GAll <sylvain AT le-gall.net>
+
+   * Version 0.0.13
+   * Add .done files with the matching archive.
+
 2018-02-15  Sylvain Le Gall <sylvain AT le-gall.net>
 
    * Version 0.0.12

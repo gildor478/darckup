@@ -187,8 +187,8 @@ let test_archive_set _ =
     ()
 
 
-let test_archive_can_include_ignore _ =
-  let all_files = 
+let test_archive_can_include_done _ =
+  let all_files =
     [
       "foobar_20150831_full.1.dar";
       "foobar_20150831_full_catalog.1.dar.done";
@@ -199,6 +199,22 @@ let test_archive_can_include_ignore _ =
       "foobar_20150831_incr_4.2.dar";
       "foobar_20150905_full.1.dar";
       "foobar_20150905_incr1.1.dar";
+    ]
+  in
+  let set, bad = ArchiveSet.of_filenames all_files in
+  StringListDiff.assert_equal [] bad;
+  StringSetDiff.assert_equal
+    (StringSetDiff.of_list all_files)
+    (StringSetDiff.of_list (ArchiveSet.to_filenames set))
+
+
+let test_archive_can_use_only_done _ =
+  let all_files =
+    [
+      "foobar_20150831_full_catalog.1.dar";
+      "foobar_20150831_full_catalog.1.dar.done";
+      "foobar_20150831_incr_1_catalog.1.dar";
+      "foobar_20150831_incr_1_catalog.1.dar.done";
     ]
   in
   let set, bad = ArchiveSet.of_filenames all_files in
@@ -671,7 +687,8 @@ let test_encrypted test_ctxt =
 let tests =
   [
     "ArchiveSet" >:: test_archive_set;
-    "ArchiveCanIncludeIgnore" >:: test_archive_can_include_ignore;
+    "ArchiveCanIncludeIgnore" >:: test_archive_can_include_done;
+    "ArchiveCanUseOnlyDone" >:: test_archive_can_use_only_done;
     "ArchiveSetTransition" >:: test_archive_set_transition;
     "load+clean+create" >:: test_load_clean_create;
     "Executable" >:: test_executable;
