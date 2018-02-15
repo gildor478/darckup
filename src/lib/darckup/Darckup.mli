@@ -39,7 +39,7 @@ sig
     *)
   val has_catalogs: t -> bool
 
-  (** Return a prefix suitable to use with -@ option of dar, for archivei
+  (** Return a prefix suitable to use with -@ option of dar, for archive
       catalog.
     *)
   val to_catalog_prefix: t -> filename
@@ -90,7 +90,7 @@ sig
     *)
   exception MissingFullArchive
 
-  (** [next t create_initial_archive  max_incremental short_prefix] returns 
+  (** [next t create_initial_archive  max_incremental short_prefix] returns
       the archive that should be created after the last one and the full
       archive it should use, in case the next one is an incremental. If
       [max_incremental] is [None], always return an incremental archive except

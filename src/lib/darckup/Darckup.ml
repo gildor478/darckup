@@ -83,6 +83,7 @@ struct
                     char '.';
                     group (rep1 digit); (* 4 *)
                     str ".dar";
+                    opt (str ".done");
                     eol])
 
   let parse s =

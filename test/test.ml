@@ -164,7 +164,7 @@ let test_archive_set _ =
         "foobar_20150905_full.1.dar";
       ]
       (List.flatten
-         (List.map Archive.to_filenames
+         (List.map (fun lst -> Archive.to_filenames lst)
             (snd (ArchiveSet.npop (ArchiveSet.length set) set))));
 
     (* next *)
@@ -185,6 +185,27 @@ let test_archive_set _ =
     end;
 
     ()
+
+
+let test_archive_can_include_ignore _ =
+  let all_files = 
+    [
+      "foobar_20150831_full.1.dar";
+      "foobar_20150831_full_catalog.1.dar.done";
+      "foobar_20150831_incr_1_catalog.1.dar.done";
+      "foobar_20150831_incr_2.1.dar";
+      "foobar_20150831_incr_3.1.dar";
+      "foobar_20150831_incr_4.1.dar";
+      "foobar_20150831_incr_4.2.dar";
+      "foobar_20150905_full.1.dar";
+      "foobar_20150905_incr1.1.dar";
+    ]
+  in
+  let set, bad = ArchiveSet.of_filenames all_files in
+  StringListDiff.assert_equal [] bad;
+  StringSetDiff.assert_equal
+    (StringSetDiff.of_list all_files)
+    (StringSetDiff.of_list (ArchiveSet.to_filenames set))
 
 
 let test_archive_set_transition _ =
@@ -504,6 +525,41 @@ let test_catalog test_ctxt =
       (in_tmpdir ["srv"; "backup"]);
     ()
 
+let test_catalog test_ctxt =
+  let open FileUtil in
+  let _, in_tmpdir, write_file = setup_filesystem test_ctxt in
+  let () =
+    (* Create etc/darckup.ini. *)
+    write_file ["etc"; "darckup.ini"]
+      (Examples.default
+       ^ Examples.archive_set_foobar
+       ^ "create_catalog=true\n");
+    (* Create etc/foobar.darrc. *)
+    write_file ["etc"; "foobar.darrc"] Examples.darrc
+  in
+  let t = T.create test_ctxt in_tmpdir in
+    create_ignore_result !t;
+    (* Make sure that only the catalog will be used for incremental. *)
+    rm [in_tmpdir ["srv"; "backup"; "foobar_20150926_full.1.dar"]];
+    create_ignore_result (T.set_now_rfc3339 t "20150927");
+    assert_equal_dir_list
+      ["foobar_20150926_full_catalog.1.dar";
+       "foobar_20150926_incr00001.1.dar";
+       "foobar_20150926_incr00001_catalog.1.dar"]
+      (in_tmpdir ["srv"; "backup"]);
+    create_ignore_result (T.set_now_rfc3339 t "20150928");
+    create_ignore_result (T.set_now_rfc3339 t "20150929");
+    create_ignore_result (T.set_now_rfc3339 t "20150930");
+    clean !t;
+    assert_equal_dir_list
+      ["foobar_20150928_full.1.dar";
+       "foobar_20150928_full_catalog.1.dar";
+       "foobar_20150928_incr00001.1.dar";
+       "foobar_20150928_incr00001_catalog.1.dar";
+       "foobar_20150930_full.1.dar";
+       "foobar_20150930_full_catalog.1.dar"]
+      (in_tmpdir ["srv"; "backup"]);
+    ()
 
 let test_always_incremental test_ctxt =
   let open FileUtil in
@@ -615,6 +671,7 @@ let test_encrypted test_ctxt =
 let tests =
   [
     "ArchiveSet" >:: test_archive_set;
+    "ArchiveCanIncludeIgnore" >:: test_archive_can_include_ignore;
     "ArchiveSetTransition" >:: test_archive_set_transition;
     "load+clean+create" >:: test_load_clean_create;
     "Executable" >:: test_executable;
