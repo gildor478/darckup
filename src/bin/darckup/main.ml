@@ -158,6 +158,13 @@ let list_archive copts aset_lst only_catalogs only_volumes =
   let set = set_of_list aset_lst in
   let t = t copts in
   let set_ref = set_of_list (List.rev_map fst t.archive_sets) in
+  let catalogs, volumes =
+    match only_catalogs, only_volumes with
+    | false, false -> None, None
+    | true, false -> Some true, None
+    | false, true -> None, Some true
+    | true, true -> Some false, Some false
+  in
   let diff = S.diff set set_ref in
     if diff <> S.empty then begin
       failwith
@@ -169,9 +176,7 @@ let list_archive copts aset_lst only_catalogs only_volumes =
       (fun (archive_name, _, a) ->
          if S.mem archive_name set then
            List.iter print_endline
-             (ArchiveSet.to_filenames
-                ~catalogs:(not only_volumes)
-                ~volumes:(not only_catalogs) a))
+             (ArchiveSet.to_filenames ?catalogs ?volumes a))
       (Darckup.load_archive_sets t);
     `Ok ()
 

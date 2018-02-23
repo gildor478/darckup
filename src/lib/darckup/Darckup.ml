@@ -63,14 +63,34 @@ struct
   let to_catalog_prefix t =
     (to_prefix t)^"_catalog"
 
-  let to_filenames ?(catalogs=true) ?(volumes=true) t =
+  let to_filenames ?catalogs ?volumes t =
     let stack = Stack.create () in
     let add_snd_to_stack = List.iter (fun (_, e) -> Stack.push e stack) in
-    if catalogs then
-      add_snd_to_stack (IntMap.bindings t.catalogs);
-    if volumes then
-      add_snd_to_stack (IntMap.bindings t.volumes);
-    List.iter (fun e -> Stack.push e stack) t.other_filenames;
+    let add_volumes () = add_snd_to_stack (IntMap.bindings t.volumes) in
+    let add_catalogs () = add_snd_to_stack (IntMap.bindings t.catalogs) in
+    let add_others () =
+      List.iter (fun e -> Stack.push e stack) t.other_filenames
+    in
+    let () =
+      match catalogs, volumes with
+      | None, None ->
+        add_volumes ();
+        add_catalogs ();
+        add_others ()
+      | Some true, Some true ->
+        add_volumes ();
+        add_catalogs ()
+      | Some false, Some false
+      | None, Some false
+      | Some false, None ->
+        ()
+      | Some true, None
+      | Some true, Some false ->
+        add_catalogs ()
+      | None, Some true
+      | Some false, Some true ->
+        add_volumes ()
+    in
     Stack.fold (fun lst e -> e :: lst) [] stack
 
   let re =

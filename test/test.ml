@@ -224,6 +224,36 @@ let test_archive_can_use_only_done _ =
     (StringSetDiff.of_list (ArchiveSet.to_filenames set))
 
 
+let test_archive_only_catalogs_doesnt_contain_done _ =
+  let all_files =
+    [
+      "foobar_20150831_full.1.dar";
+      "foobar_20150831_full_catalog.1.dar";
+      "foobar_20150831_full_catalog.1.dar.done";
+    ]
+  in
+  let set, bad = ArchiveSet.of_filenames all_files in
+  StringListDiff.assert_equal [] bad;
+  StringListDiff.assert_equal
+    ["foobar_20150831_full_catalog.1.dar"]
+    (ArchiveSet.to_filenames ~catalogs:true set)
+
+
+let test_archive_only_volumes_doesnt_contain_done _ =
+  let all_files =
+    [
+      "foobar_20150831_full.1.dar";
+      "foobar_20150831_full_catalog.1.dar";
+      "foobar_20150831_full_catalog.1.dar.done";
+    ]
+  in
+  let set, bad = ArchiveSet.of_filenames all_files in
+  StringListDiff.assert_equal [] bad;
+  StringListDiff.assert_equal
+    ["foobar_20150831_full.1.dar"]
+    (ArchiveSet.to_filenames ~volumes:true set)
+
+
 let test_archive_set_transition _ =
   let files =
       [
@@ -251,6 +281,7 @@ let test_archive_set_transition _ =
     assert_equal_next
       ("foobar_20150831_incr00101", Some "foobar_20150831_full")
       (ArchiveSet.next set' false None "foobar_20150907")
+
 
 module T =
 struct
@@ -689,6 +720,10 @@ let tests =
     "ArchiveSet" >:: test_archive_set;
     "ArchiveCanIncludeIgnore" >:: test_archive_can_include_done;
     "ArchiveCanUseOnlyDone" >:: test_archive_can_use_only_done;
+    "ArchiveOnlyCatalogsDoesntContainDone" >::
+    test_archive_only_catalogs_doesnt_contain_done;
+    "ArchiveOnlyVolumesDoesntContainDone" >::
+    test_archive_only_volumes_doesnt_contain_done;
     "ArchiveSetTransition" >:: test_archive_set_transition;
     "load+clean+create" >:: test_load_clean_create;
     "Executable" >:: test_executable;

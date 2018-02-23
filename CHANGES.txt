@@ -1,4 +1,10 @@
-2018-02-16  Sylvain Le GAll <sylvain AT le-gall.net>
+2018-02-23  Sylvain Le Gall <sylvain AT le-gall.net>
+
+   * Version 0.0.14
+   * Exclude .done files when using --only_catalogs or --only_volumes in the
+     file list.
+
+2018-02-16  Sylvain Le Gall <sylvain AT le-gall.net>
 
    * Version 0.0.13
    * Add .done files with the matching archive.
