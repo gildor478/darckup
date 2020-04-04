@@ -109,10 +109,16 @@ headache:
 #  Deploy/release the software.
 
 deploy:
-	admin-gallu-deploy --verbose \
-		--forge_upload	--forge_group darckup --forge_user gildor-admin
-	deploy-using-oasis
-	admin-gallu-oasis-increment --use_vcs \
-		--setup_run --setup_args '-setup-update dynamic'
+	dispakan --verbose $(DEPLOY_FLAGS)
 
-.PHONY: deploy
+install-bin:
+	ocaml  setup.ml -configure \
+		--prefix / \
+		--sysconfdir /etc \
+		--destdir "$(DESTDIR)"
+	ocaml setup.ml -build
+	mkdir -p "$(DESTDIR)/lib/ocaml"
+	env OCAMLFIND_DESTDIR="$(DESTDIR)/lib/ocaml" \
+		ocaml setup.ml -install
+
+.PHONY: deploy install-bin

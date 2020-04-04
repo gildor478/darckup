@@ -1,0 +1,4 @@
+BinaryTarballs:
+  'darckup':
+    MakeTargets:
+    - install-bin
